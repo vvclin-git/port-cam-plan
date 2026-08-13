@@ -66,6 +66,27 @@ Sensor active area 是 optical-format 工程近似值；正式設計應以攝影
 - Leaflet 採 BSD-2-Clause；授權全文見 [`leaflet/LICENSE`](./leaflet/LICENSE)。
 - 若 Leaflet 本機資源遺失，頁面會提示檢查 `leaflet/leaflet.js`、`leaflet/leaflet.css`、`leaflet/images/`、檔名大小寫與相對路徑。
 
+## Camera Scene JSON 匯出
+
+側欄的「Ray Casting 測試匯出」會依按鈕當下的 Camera marker、Camera 控制參數、光學參數、目前底圖與 tile zoom，產生版本化的 `camera-scene/1.1` JSON。可下載 `camera-scene-YYYYMMDD-HHmmss.json`，或複製完整 JSON 給獨立 ray-casting 程式；App 只輸出 manifest，不下載或內嵌 PNG／JPEG 圖磚。
+
+- `camera.position` 記錄 `[latitudeDeg, longitudeDeg]` 語意的 WGS84 位置、相對交平面高度與 `heightReference: "intersection-plane"`。
+- `camera.orientation.headingDeg` 以真北為 0°、順時針增加並正規化到 `[0, 360)`；`tiltDownDeg` 正值向下；第一版 `rollDeg` 固定為 0°。
+- `image` 使用左上角原點、影像中心 principal point 與 `pixelCenterConvention: "half-pixel"`；外部程式應以 pixel + 0.5 作為 pixel center。
+- `optics` 包含 sensor 尺寸、解析度、焦距、pixel pitch、完整 HFOV／VFOV 與 `distortionModel: "none"`。
+- `coordinateSystem` 固定記錄 EPSG:4326／WGS84、heading／tilt 慣例與 Camera frame：right `+X`、down `+Y`、forward `+Z`。
+- `intersectionSurface` 是 elevation 0 m 的水平交平面；Camera 高度不是實際海拔，也不包含 DEM、潮位、建築或障礙物。
+
+### Tile manifest
+
+`tileSelection` 使用現有 near／far、HFOV／VFOV 與 horizon 模型建立保守 FOV envelope，最大距離為 `min(horizon distance, 30000 m)`，再轉換成標準 Web Mercator tile indices 並加入一圈 `paddingTiles: 1`。Tile 依 y、x 排序且去除重複，manifest 不是逐像素 ray-casting 的幾何真值。
+
+- `footprintStatus` 為 `finite`、`horizon-clipped` 或 `no-ground-intersection`；最後一種會輸出 `footprint: null` 與空的 `tiles`。
+- JSON 的 tile 欄位永遠是標準 Web Mercator `z/x/y`；每個 tile 另含 WGS84 `bounds` 與依目前來源 template 展開的完整 `url`。
+- OSM 使用 `{z}/{x}/{y}`；NLSC EMAP／PHOTO 維持 App 實際使用的 `{z}/{y}/{x}` WMTS GoogleMapsCompatible URL。切換底圖只改變 `tileSource` 與 manifest URL，不改 Camera 模型。
+- Tile 服務斷線時仍可產生 JSON，因為匯出不依賴圖磚成功載入。外部程式下載時應保留來源 attribution、使用可控 cache、對暫時性錯誤採有限次數與退避 retry，並遵守服務的 rate limit；不可把 Cookie、Token、Authorization header、Proxy credential 或瀏覽器憑證放入 JSON。
+- 若 ray 落在 manifest 外，外部程式應回傳 `tile-not-in-manifest`，不可誤判成 `no-intersection`、`land` 或 `water`。
+
 ## 驗證
 
 可先執行靜態檢查：

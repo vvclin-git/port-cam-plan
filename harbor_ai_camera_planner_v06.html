@@ -108,6 +108,9 @@
     .surface-toggle label{display:flex;align-items:center;gap:7px;margin:0;color:var(--text);cursor:pointer}
     .surface-state{font-size:11px;color:var(--muted);white-space:nowrap}
     .surface-swatch{width:16px;height:10px;border-radius:3px;border:1px solid rgba(31,41,55,.25)}
+    .export-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+    .export-status{margin-top:8px;font-size:12px;color:var(--muted);min-height:1.2em}
+    .export-error{margin-top:6px;font-size:12px;color:#a33a00;white-space:pre-line}
     .tiny{font-size:11px;color:var(--muted)}
     .warn{
       margin-top:8px;
@@ -305,6 +308,19 @@
     <div class="warn">
       底圖目前可切換 OpenStreetMap、NLSC 通用電子地圖、NLSC 正射影像，三者皆需網路；若其中一個服務被公司網路阻擋，可用左側選單切換其他圖層。
     </div>
+    <h2>Ray Casting 測試匯出</h2>
+    <div class="card" id="cameraSceneExport">
+      <label for="tileZoomSelect">圖磚 zoom</label>
+      <select id="tileZoomSelect" aria-label="Tile zoom"></select>
+      <div class="tiny" id="tileZoomHelp">依目前啟用的底圖來源更新支援範圍。</div>
+      <div class="metric"><span>Schema</span><b>camera-scene/1.1</b></div>
+      <div class="export-actions">
+        <button id="downloadCameraScene">下載 Camera Scene JSON</button>
+        <button id="copyCameraScene" class="secondary">複製 Camera Scene JSON</button>
+      </div>
+      <div class="export-status" id="exportState" role="status" aria-live="polite">尚未匯出。</div>
+      <div class="export-error" id="exportError" role="alert"></div>
+    </div>
   </aside>
 
   <main class="map-wrap">
@@ -449,6 +465,50 @@
     }
   );
 
+  const tileSourceByKey = {
+    osm: {
+      id: 'osm',
+      name: 'OpenStreetMap',
+      type: 'xyz',
+      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      crs: 'EPSG:3857',
+      tileSizePx: 256,
+      minZoom: 0,
+      maxZoom: 19,
+      urlCoordinateOrder: 'z-x-y',
+      networkRequired: true,
+      attribution: '© OpenStreetMap contributors'
+    },
+    nlscEmap: {
+      id: 'nlscEmap',
+      name: 'NLSC 通用電子地圖',
+      type: 'wmts-google-maps-compatible',
+      urlTemplate: 'https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}',
+      crs: 'EPSG:3857',
+      tileMatrixSet: 'GoogleMapsCompatible',
+      tileSizePx: 256,
+      minZoom: 0,
+      maxZoom: 19,
+      urlCoordinateOrder: 'z-y-x',
+      networkRequired: true,
+      attribution: '© 國土測繪中心 NLSC'
+    },
+    nlscPhoto: {
+      id: 'nlscPhoto',
+      name: 'NLSC 正射影像',
+      type: 'wmts-google-maps-compatible',
+      urlTemplate: 'https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}',
+      crs: 'EPSG:3857',
+      tileMatrixSet: 'GoogleMapsCompatible',
+      tileSizePx: 256,
+      minZoom: 0,
+      maxZoom: 19,
+      urlCoordinateOrder: 'z-y-x',
+      networkRequired: true,
+      attribution: '© 國土測繪中心 NLSC'
+    }
+  };
+
   const map = L.map('map', {
     zoomControl: false,
     layers: [osm]
@@ -482,7 +542,28 @@
 
   baseMapSelect.addEventListener('change', () => {
     switchBaseMap(baseMapSelect.value);
+    syncTileZoomOptions();
   });
+
+  const tileZoomSelect = document.getElementById('tileZoomSelect');
+  const tileZoomHelp = document.getElementById('tileZoomHelp');
+
+  function syncTileZoomOptions(){
+    const source = tileSourceByKey[baseMapSelect.value] || tileSourceByKey.osm;
+    const previous = tileZoomSelect.value === '' ? 18 : Number(tileZoomSelect.value);
+    const preferred = Number.isInteger(previous) ? previous : 18;
+    tileZoomSelect.replaceChildren();
+    for (let zoom = source.minZoom; zoom <= source.maxZoom; zoom++) {
+      const option = document.createElement('option');
+      option.value = String(zoom);
+      option.textContent = String(zoom);
+      tileZoomSelect.appendChild(option);
+    }
+    tileZoomSelect.value = String(Math.min(source.maxZoom, Math.max(source.minZoom, preferred)));
+    tileZoomHelp.textContent = `${source.name}: zoom ${source.minZoom}–${source.maxZoom}`;
+  }
+
+  syncTileZoomOptions();
 
   const tileErrorCounts = new Map();
 
@@ -959,6 +1040,321 @@
       <div class="metric"><span>YOLO estimate</span><b>${classifyYOLO(shortPx)}</b></div>
     `;
   }
+
+  const CAMERA_SCENE_SCHEMA = 'camera-scene/1.1';
+  const TILE_PADDING = 1;
+  const MAXIMUM_RAY_DISTANCE_M = 30000;
+  const WEB_MERCATOR_MAX_LAT = 85.0511287798;
+  const exportStateEl = document.getElementById('exportState');
+  const exportErrorEl = document.getElementById('exportError');
+
+  function normalizeHeading(degrees){
+    return ((degrees % 360) + 360) % 360;
+  }
+
+  function isFinitePositive(value){
+    return Number.isFinite(value) && value > 0;
+  }
+
+  function setExportState(message, error = ''){
+    exportStateEl.textContent = message;
+    exportErrorEl.textContent = error;
+  }
+
+  function validateCameraSceneInputs(){
+    const lat = cameraLatLng.lat;
+    const lng = cameraLatLng.lng;
+    const sw = val('sensorW');
+    const sh = val('sensorH');
+    const rw = val('resW');
+    const rh = val('resH');
+    const focal = val('focal');
+    const camHeight = val('camHeight');
+    const targetHeight = val('targetHeight');
+    const heading = val('heading');
+    const tilt = val('tilt');
+    const zoom = Number(tileZoomSelect.value);
+    const source = tileSourceByKey[baseMapSelect.value] || tileSourceByKey.osm;
+    const errors = [];
+
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) errors.push('Camera latitude 必須介於 -90 與 90。');
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) errors.push('Camera longitude 必須介於 -180 與 180。');
+    if (!isFinitePositive(camHeight)) errors.push('Camera height 必須大於 0 m。');
+    if (!isFinitePositive(sw) || !isFinitePositive(sh)) errors.push('Sensor 尺寸必須是大於 0 的有限數值。');
+    if (!Number.isInteger(rw) || rw <= 0 || !Number.isInteger(rh) || rh <= 0) errors.push('影像寬高必須是正整數。');
+    if (!isFinitePositive(focal)) errors.push('焦距必須大於 0 mm。');
+    if (!Number.isFinite(targetHeight) || targetHeight <= 0) errors.push('目標高度必須大於 0 m，才能沿用地平線距離模型。');
+    if (!Number.isFinite(heading)) errors.push('Heading 必須是有限數值。');
+    if (!Number.isFinite(tilt)) errors.push('Tilt 必須是有限數值。');
+    if (!Number.isInteger(zoom) || zoom < source.minZoom || zoom > source.maxZoom) {
+      errors.push(`Tile zoom 必須介於 ${source.minZoom} 與 ${source.maxZoom}。`);
+    }
+
+    const c = compute();
+    if (!Number.isFinite(c.hfov) || c.hfov <= 0 || c.hfov >= 180) errors.push('HFOV 必須是小於 180° 的有限正數。');
+    if (!Number.isFinite(c.vfov) || c.vfov <= 0 || c.vfov >= 180) errors.push('VFOV 必須是小於 180° 的有限正數。');
+    if (!Number.isFinite(c.horizonKm) || c.horizonKm <= 0) errors.push('地平線距離模型必須產生有限正數。');
+
+    if (errors.length) throw new Error(errors.join('\n'));
+
+    return {lat, lng, sw, sh, rw, rh, focal, camHeight, targetHeight, heading, tilt, zoom, source, c};
+  }
+
+  function longitudeToTileX(longitude, zoom){
+    const n = 2 ** zoom;
+    const wrapped = ((longitude + 180) % 360 + 360) % 360;
+    return Math.min(n - 1, Math.max(0, Math.floor(wrapped / 360 * n)));
+  }
+
+  function latitudeToTileY(latitude, zoom){
+    const n = 2 ** zoom;
+    const lat = Math.max(-WEB_MERCATOR_MAX_LAT, Math.min(WEB_MERCATOR_MAX_LAT, latitude));
+    const radians = d2r(lat);
+    const normalized = (1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2;
+    return Math.min(n - 1, Math.max(0, Math.floor(normalized * n)));
+  }
+
+  function tileXToLongitude(x, zoom){
+    return x / (2 ** zoom) * 360 - 180;
+  }
+
+  function tileYToLatitude(y, zoom){
+    return r2d(Math.atan(Math.sinh(Math.PI * (1 - 2 * y / (2 ** zoom)))));
+  }
+
+  function expandTileUrl(template, z, x, y){
+    return template
+      .replaceAll('{z}', String(z))
+      .replaceAll('{x}', String(x))
+      .replaceAll('{y}', String(y));
+  }
+
+  function makeClosedFootprint(center, heading, halfAngle, innerDistance, outerDistance){
+    const points = makeSector(center, heading, halfAngle, innerDistance, outerDistance, 48);
+    const ring = points.map(point => [point.lng, point.lat]);
+    if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
+      ring.push([...ring[0]]);
+    }
+    return ring;
+  }
+
+  function buildTileManifest(ring, source, zoom, padding){
+    const points = ring.slice(0, -1);
+    const projected = points.map(([longitude, latitude]) => ({
+      x: longitudeToTileX(longitude, zoom),
+      y: latitudeToTileY(latitude, zoom)
+    }));
+    const n = 2 ** zoom;
+    const minX = Math.max(0, Math.min(...projected.map(point => point.x)) - padding);
+    const maxX = Math.min(n - 1, Math.max(...projected.map(point => point.x)) + padding);
+    const minY = Math.max(0, Math.min(...projected.map(point => point.y)) - padding);
+    const maxY = Math.min(n - 1, Math.max(...projected.map(point => point.y)) + padding);
+    const tiles = [];
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        tiles.push({
+          z: zoom,
+          x,
+          y,
+          url: expandTileUrl(source.urlTemplate, zoom, x, y),
+          bounds: {
+            west: tileXToLongitude(x, zoom),
+            south: tileYToLatitude(y + 1, zoom),
+            east: tileXToLongitude(x + 1, zoom),
+            north: tileYToLatitude(y, zoom)
+          }
+        });
+      }
+    }
+
+    return tiles;
+  }
+
+  function buildCameraScene(){
+    const input = validateCameraSceneInputs();
+    const {lat, lng, sw, sh, rw, rh, focal, camHeight, targetHeight, heading, tilt, zoom, source, c} = input;
+    const maximumRayDistanceM = Math.min(c.horizonKm * 1000, MAXIMUM_RAY_DISTANCE_M);
+    const nearAngleDeg = tilt + c.vfov / 2;
+    const farAngleDeg = tilt - c.vfov / 2;
+    const nearDistanceM = nearAngleDeg > 0 ? camHeight / Math.tan(d2r(nearAngleDeg)) : 0;
+    const farDistanceM = farAngleDeg > 0 ? camHeight / Math.tan(d2r(farAngleDeg)) : maximumRayDistanceM;
+    const envelopeNearM = Math.max(0, nearDistanceM);
+    const envelopeFarM = Math.min(maximumRayDistanceM, farDistanceM);
+
+    if (!(maximumRayDistanceM > 0) || nearAngleDeg <= 0 || !(envelopeFarM > envelopeNearM)) {
+      return {
+        schemaVersion: CAMERA_SCENE_SCHEMA,
+        exportedAt: new Date().toISOString(),
+        application: {name: 'port-cam-plan', version: '0.7.2', exportType: 'camera-scene'},
+        camera: {
+          position: {latitudeDeg: lat, longitudeDeg: lng, heightM: camHeight, heightReference: 'intersection-plane'},
+          orientation: {headingDeg: normalizeHeading(heading), tiltDownDeg: tilt, rollDeg: 0}
+        },
+        image: {widthPx: rw, heightPx: rh, principalPointPx: {x: rw / 2, y: rh / 2}, pixelCenterConvention: 'half-pixel'},
+        optics: {
+          sensorWidthMm: sw,
+          sensorHeightMm: sh,
+          focalLengthMm: focal,
+          pixelPitchMm: c.pitchMm,
+          horizontalFovDeg: c.hfov,
+          verticalFovDeg: c.vfov,
+          distortionModel: 'none'
+        },
+        coordinateSystem: {
+          horizontalCrs: 'EPSG:4326',
+          earthModel: 'WGS84',
+          imageOrigin: 'top-left',
+          headingConvention: 'clockwise-from-true-north',
+          tiltConvention: 'positive-down-from-horizontal',
+          cameraFrame: {right: '+X', down: '+Y', forward: '+Z'}
+        },
+        intersectionSurface: {type: 'horizontal-plane', elevationM: 0, elevationReference: 'local-planning-datum'},
+        tileSource: {...source},
+        tileSelection: {
+          method: 'conservative-fov-envelope',
+          zoom,
+          paddingTiles: TILE_PADDING,
+          maximumRayDistanceM: MAXIMUM_RAY_DISTANCE_M,
+          footprintStatus: 'no-ground-intersection',
+          footprint: null,
+          tiles: []
+        },
+        derivedPlanningValues: {
+          horizonDistanceM: c.horizonKm * 1000,
+          vfovNearDistanceM: Number.isFinite(c.nearR) ? c.nearR : null,
+          vfovFarDistanceM: Number.isFinite(c.farR) ? c.farR : null,
+          envelopeNearDistanceM: null,
+          envelopeFarDistanceM: null,
+          horizontalEnvelopeHalfAngleDeg: c.hfov / 2,
+          targetHeightM: targetHeight
+        },
+        assumptions: [
+          'The intersection surface is a horizontal plane at local planning datum elevation 0 m.',
+          'Camera height is relative to the intersection plane and is not true altitude.',
+          'The vertical FOV has no valid ground intersection for the current tilt and height.',
+          'Roll is fixed at 0 degrees; lens distortion is not modeled; the principal point is the image center.'
+        ]
+      };
+    }
+
+    const footprintStatus = farAngleDeg <= 0 || farDistanceM > c.horizonKm * 1000
+      ? 'horizon-clipped'
+      : 'finite';
+    const footprintRing = makeClosedFootprint(cameraLatLng, heading, c.hfov / 2, envelopeNearM, envelopeFarM);
+    const tiles = buildTileManifest(footprintRing, source, zoom, TILE_PADDING);
+
+    return {
+      schemaVersion: CAMERA_SCENE_SCHEMA,
+      exportedAt: new Date().toISOString(),
+      application: {name: 'port-cam-plan', version: '0.7.2', exportType: 'camera-scene'},
+      camera: {
+        position: {latitudeDeg: lat, longitudeDeg: lng, heightM: camHeight, heightReference: 'intersection-plane'},
+        orientation: {headingDeg: normalizeHeading(heading), tiltDownDeg: tilt, rollDeg: 0}
+      },
+      image: {widthPx: rw, heightPx: rh, principalPointPx: {x: rw / 2, y: rh / 2}, pixelCenterConvention: 'half-pixel'},
+      optics: {
+        sensorWidthMm: sw,
+        sensorHeightMm: sh,
+        focalLengthMm: focal,
+        pixelPitchMm: c.pitchMm,
+        horizontalFovDeg: c.hfov,
+        verticalFovDeg: c.vfov,
+        distortionModel: 'none'
+      },
+      coordinateSystem: {
+        horizontalCrs: 'EPSG:4326',
+        earthModel: 'WGS84',
+        imageOrigin: 'top-left',
+        headingConvention: 'clockwise-from-true-north',
+        tiltConvention: 'positive-down-from-horizontal',
+        cameraFrame: {right: '+X', down: '+Y', forward: '+Z'}
+      },
+      intersectionSurface: {type: 'horizontal-plane', elevationM: 0, elevationReference: 'local-planning-datum'},
+      tileSource: {...source},
+      tileSelection: {
+        method: 'conservative-fov-envelope',
+        zoom,
+        paddingTiles: TILE_PADDING,
+        maximumRayDistanceM: MAXIMUM_RAY_DISTANCE_M,
+        footprintStatus,
+        footprint: {type: 'Polygon', coordinates: [footprintRing]},
+        tiles
+      },
+      derivedPlanningValues: {
+        horizonDistanceM: c.horizonKm * 1000,
+        vfovNearDistanceM: Number.isFinite(c.nearR) ? c.nearR : null,
+        vfovFarDistanceM: Number.isFinite(c.farR) ? c.farR : null,
+        envelopeNearDistanceM: envelopeNearM,
+        envelopeFarDistanceM: envelopeFarM,
+        horizontalEnvelopeHalfAngleDeg: c.hfov / 2,
+        targetHeightM: targetHeight
+      },
+      assumptions: [
+        'The intersection surface is a horizontal plane at local planning datum elevation 0 m.',
+        'Camera height is relative to the intersection plane and is not true altitude.',
+        'The footprint is a conservative near/far FOV envelope, not per-pixel ray-casting truth.',
+        'The envelope is limited by the lesser of the existing horizon-distance model and 30 km.',
+        'Rays above the horizon are clipped at the horizon distance.',
+        'Roll is fixed at 0 degrees; lens distortion is not modeled; the principal point is the image center; pixel centers use pixel + 0.5.',
+        'The tile manifest includes one tile of padding and is a conservative download range, not a geometric ground-truth result.'
+      ]
+    };
+  }
+
+  function serializeCameraScene(){
+    return JSON.stringify(buildCameraScene(), null, 2);
+  }
+
+  function localTimestamp(date = new Date()){
+    const pad = value => String(value).padStart(2, '0');
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  }
+
+  function handleExportError(error){
+    setExportState('匯出失敗。', error.message || String(error));
+  }
+
+  document.getElementById('downloadCameraScene').addEventListener('click', () => {
+    try {
+      const json = serializeCameraScene();
+      const blobUrl = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `camera-scene-${localTimestamp()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+      setExportState(`已下載 camera-scene-${localTimestamp()}.json。`);
+    } catch (error) {
+      handleExportError(error);
+    }
+  });
+
+  document.getElementById('copyCameraScene').addEventListener('click', async () => {
+    try {
+      const json = serializeCameraScene();
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(json);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = json;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        if (!document.execCommand('copy')) throw new Error('瀏覽器不允許存取剪貼簿。');
+        textarea.remove();
+      }
+      setExportState('Camera Scene JSON 已複製。');
+    } catch (error) {
+      handleExportError(error);
+    }
+  });
+
+  window.cameraSceneExportForTest = {buildCameraScene, serializeCameraScene};
 
   function updateAll(){
     updateSummary();

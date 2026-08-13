@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.2 — 2026-08-13
+
+- 新增 `camera-scene/1.1` Camera Scene JSON 下載與複製功能，匯出當下 Camera 位置、高度、Heading、Tilt、sensor、解析度、焦距、HFOV／VFOV 與座標慣例。
+- 新增目前啟用底圖來源與 OSM／NLSC URL 座標順序的 tile source 匯出。
+- 新增依現有 near／far、HFOV／VFOV、horizon 模型產生的保守 FOV tile manifest，含一圈 tile padding、horizon clipping、WGS84 bounds 與可重建 URL。
+- 圖磚服務無法連線時仍可匯出；不下載或內嵌圖磚，也不匯出 Cookie、Token、Authorization header、Proxy credential 或瀏覽器憑證。
+- 未改動既有 Camera marker、FOV、YOLO coverage、target calculation 與 OSM／NLSC 圖磚載入方式。
+
 ## v0.7.1 — 2026-08-13
 
 - 將 Leaflet 1.9.4 官方 distribution 的 JS、CSS、五個 images 與 BSD-2-Clause LICENSE 加入 `leaflet/`。
