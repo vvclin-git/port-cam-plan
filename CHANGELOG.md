@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.1 — 2026-08-13
+
+- 將 Leaflet 1.9.4 官方 distribution 的 JS、CSS、五個 images 與 BSD-2-Clause LICENSE 加入 `leaflet/`。
+- 將 HTML 的 Leaflet 引用改為 `./leaflet/leaflet.css` 與 `./leaflet/leaflet.js`，移除 jsDelivr 依賴。
+- 保留 OSM／NLSC 線上圖磚 URL，不包含圖磚離線化。
+- 更新 Leaflet 本機資源遺失提示，涵蓋 JS、CSS、images、檔名大小寫與相對路徑檢查。
+- 未修改 FOV、VFOV、地平線、YOLO、Camera／target 操作與水陸 GeoJSON 邏輯。
+
 ## v0.7 — 2026-08-13
 
 - 新增 `data/kaohsiung-harbor-surface.geojson` 固定 WGS84 水陸快照，範圍為 `120.24–120.36 E / 22.55–22.68 N`。

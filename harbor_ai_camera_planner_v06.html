@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>港區 AI 攝影機規劃工具 v0.7</title>
 
-  <!-- Leaflet via jsDelivr: more reliable than unpkg in some enterprise networks -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <!-- Leaflet 1.9.4 official distribution, served from this project. -->
+  <link id="leafletCss" rel="stylesheet" href="./leaflet/leaflet.css">
 
   <style>
     :root{
@@ -312,14 +312,14 @@
     <div class="status" id="status">預設 Camera 位於高雄港附近；可點選「地圖點選 Camera」重新設定。</div>
     <div class="map-error" id="mapError">
       <div>
-        <b>底圖載入失敗。</b><br>
-        請確認目前網路可連到所選圖磚服務與 <code>cdn.jsdelivr.net</code>。請用左側選單切換其他底圖。
+        <b>地圖或 Leaflet 資源載入失敗。</b><br>
+        請確認目前網路可連到所選圖磚服務，並確認專案的 <code>leaflet/</code> 目錄完整部署。
       </div>
     </div>
   </main>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="./leaflet/leaflet.js"></script>
 <script>
 (() => {
   // Standard optical-format approximations for a 16:9 active image.
@@ -353,6 +353,32 @@
   const resolutionPreset = document.getElementById('resolutionPreset');
   const resW = document.getElementById('resW');
   const resH = document.getElementById('resH');
+  let leafletResourceError = false;
+
+  function showLeafletResourceError(){
+    leafletResourceError = true;
+    document.getElementById('mapError').style.display = 'flex';
+    document.getElementById('mapError').querySelector('div').innerHTML =
+      '<b>Leaflet 本機資源載入失敗。</b><br>' +
+      '請確認 <code>leaflet/leaflet.js</code>、<code>leaflet/leaflet.css</code>、<code>leaflet/images/</code> 已部署，' +
+      '並檢查檔名大小寫與相對路徑是否正確。';
+    document.getElementById('status').textContent =
+      'Leaflet 本機資源載入失敗；請檢查 leaflet/ 目錄、images/ 圖片與相對路徑。';
+  }
+
+  function checkLeafletImageResources(){
+    [
+      'layers.png',
+      'layers-2x.png',
+      'marker-icon.png',
+      'marker-icon-2x.png',
+      'marker-shadow.png'
+    ].forEach(file => {
+      const image = new Image();
+      image.onerror = showLeafletResourceError;
+      image.src = `./leaflet/images/${file}`;
+    });
+  }
 
   function applySensorPreset() {
     const key = sensorFormat.value;
@@ -378,11 +404,23 @@
     updateAll();
   }
 
+  const leafletCss = document.getElementById('leafletCss');
+  let leafletCssLoaded = false;
+  try {
+    leafletCssLoaded = Boolean(leafletCss && leafletCss.sheet && leafletCss.sheet.cssRules && leafletCss.sheet.cssRules.length);
+  } catch (error) {
+    leafletCssLoaded = false;
+  }
+  if (!leafletCssLoaded) {
+    showLeafletResourceError();
+  }
+
   if (typeof L === 'undefined') {
-    document.getElementById('mapError').style.display = 'flex';
-    document.getElementById('status').textContent = 'Leaflet 載入失敗。';
+    showLeafletResourceError();
     return;
   }
+
+  checkLeafletImageResources();
 
   const harborCenter = [22.6108, 120.2890];
 
@@ -435,7 +473,9 @@
     });
     const next = baseMapByKey[key] || osm;
     next.addTo(map);
-    document.getElementById('mapError').style.display = 'none';
+    if (!leafletResourceError) {
+      document.getElementById('mapError').style.display = 'none';
+    }
     document.getElementById('status').textContent =
       '目前底圖：' + baseMapSelect.options[baseMapSelect.selectedIndex].text;
   }
@@ -452,7 +492,7 @@
     layer.on('tileerror', () => {
       const n = (tileErrorCounts.get(label) || 0) + 1;
       tileErrorCounts.set(label, n);
-      if (n >= 3 && map.hasLayer(layer)) {
+      if (n >= 3 && map.hasLayer(layer) && !leafletResourceError) {
         document.getElementById('mapError').style.display = 'flex';
         document.getElementById('mapError').querySelector('div').innerHTML =
           `<b>${label} 底圖載入失敗。</b><br>` +
@@ -463,7 +503,7 @@
     });
 
     layer.on('load', () => {
-      if (map.hasLayer(layer)) {
+      if (map.hasLayer(layer) && !leafletResourceError) {
         document.getElementById('mapError').style.display = 'none';
       }
     });

@@ -1,6 +1,6 @@
 # 港區 AI 攝影機規劃工具
 
-Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 YOLO 目標尺寸；v0.7 新增固定快照的水域／陸地 overlay 與點擊分類。
+Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 YOLO 目標尺寸；v0.7 新增固定快照的水域／陸地 overlay 與點擊分類，v0.7.1 將 Leaflet 靜態資源本地化。
 
 ## 開啟
 
@@ -46,7 +46,7 @@ YOLO 顏色分級是 site-planning heuristic，不是 YOLO 官方保證門檻。
 
 ## 網路與錯誤狀態
 
-Leaflet library 與三種底圖從線上服務載入。水陸資料不在線上查詢，只由 `fetch('./data/kaohsiung-harbor-surface.geojson')` 載入專案內固定檔。
+Leaflet library 已改由專案內的 `leaflet/` 靜態目錄載入，不再連線任何 Leaflet CDN。水陸資料也不在線上查詢，只由 `fetch('./data/kaohsiung-harbor-surface.geojson')` 載入專案內固定檔；只有 OSM／NLSC 圖磚仍需外部網路。
 
 - 載入中：checkbox 停用，結果顯示「載入中」。
 - 載入成功：checkbox 預設開啟，可切換視覺 overlay。
@@ -54,6 +54,17 @@ Leaflet library 與三種底圖從線上服務載入。水陸資料不在線上�
 - 點擊資料 bbox 外：顯示 `Unknown`。
 
 Sensor active area 是 optical-format 工程近似值；正式設計應以攝影機 datasheet 的實際 active width/height 為準。
+
+## Leaflet 靜態資源與部署
+
+- 版本固定為 Leaflet 1.9.4，來源為 [Leaflet 官方 v1.9.4 release](https://github.com/Leaflet/Leaflet/releases/tag/v1.9.4)。
+- `leaflet/leaflet.js`、`leaflet/leaflet.css`、`leaflet/images/` 與 `leaflet/LICENSE` 均隨專案提交；CSS 使用官方相對路徑 `images/...`，不可移動或省略 images 目錄。
+- `harbor_ai_camera_planner_v06.html` 使用 `./leaflet/leaflet.css` 與 `./leaflet/leaflet.js`，不使用 `/` 開頭的根目錄路徑，因此可部署在 GitHub Pages repository site、Vercel static hosting、IIS virtual directory、NAS 子目錄或其他網站子目錄。
+- 支援 localhost HTTP server：`python -m http.server 8765 --bind 127.0.0.1`。
+- 也可直接部署整個專案目錄到 GitHub Pages、Vercel static hosting、IIS 或 NAS static hosting；需保留 `leaflet/`、`data/` 與 HTML 的相對目錄結構。
+- OSM／NLSC 圖磚 URL 維持線上服務，離線部署不包含圖磚快取或圖磚伺服器。
+- Leaflet 採 BSD-2-Clause；授權全文見 [`leaflet/LICENSE`](./leaflet/LICENSE)。
+- 若 Leaflet 本機資源遺失，頁面會提示檢查 `leaflet/leaflet.js`、`leaflet/leaflet.css`、`leaflet/images/`、檔名大小寫與相對路徑。
 
 ## 驗證
 
