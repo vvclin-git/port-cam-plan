@@ -87,6 +87,22 @@ Sensor active area 是 optical-format 工程近似值；正式設計應以攝影
 - Tile 服務斷線時仍可產生 JSON，因為匯出不依賴圖磚成功載入。外部程式下載時應保留來源 attribution、使用可控 cache、對暫時性錯誤採有限次數與退避 retry，並遵守服務的 rate limit；不可把 Cookie、Token、Authorization header、Proxy credential 或瀏覽器憑證放入 JSON。
 - 若 ray 落在 manifest 外，外部程式應回傳 `tile-not-in-manifest`，不可誤判成 `no-intersection`、`land` 或 `water`。
 
+## Ray Casting 圖磚色彩水域測試工具
+
+目前分支已提供獨立的 [`ray_cast_test.py`](./ray_cast_test.py)。它讀取上述
+`camera-scene/1.1`，以圖磚 RGB、可調式 CIELAB CIE76 ΔE、多個水域參考色及選用
+HSV gate 產生 `water`／`non-water`／`unknown`。Tkinter/Pillow UI 的顏色設定變更
+只會重新分類記憶體中的樣本，不重新建立 rays、地面交點或下載圖磚。
+
+```powershell
+python -m pip install -r requirements-ray-cast.txt
+python ray_cast_test.py camera-scene.json --ui
+```
+
+CLI、profile schema、輸出檔案與驗收邊界見
+[`docs/RAY_CAST_WATER_COLOR.md`](./docs/RAY_CAST_WATER_COLOR.md)。此工具只供快速驗證，
+不取代 GeoJSON、語意分割或人工檢查。
+
 ## 驗證
 
 可先執行靜態檢查：

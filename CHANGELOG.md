@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.0 - 2026-08-13
+
+- Added `ray_cast_test.py`, a Python CLI and Tkinter/Pillow desktop tool for
+  Camera Scene ray casting, cached tile RGB sampling, CIELAB CIE76 water
+  classification, optional HSV gating, and nearest-neighbour previews.
+- Added background tile/ray work, profile validation, `ray-results.json`,
+  classification preview images, `report.txt`, and focused unit tests.
+- Colour/profile changes reclassify cached samples; changing scene, zoom, grid,
+  or sampling neighborhood expires the old run and requires a new run.
+
 ## v0.7.2 — 2026-08-13
 
 - 新增 `camera-scene/1.1` Camera Scene JSON 下載與複製功能，匯出當下 Camera 位置、高度、Heading、Tilt、sensor、解析度、焦距、HFOV／VFOV 與座標慣例。
