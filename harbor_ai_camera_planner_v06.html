@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>港區 AI 攝影機規劃工具 v0.6</title>
+  <title>港區 AI 攝影機規劃工具 v0.7</title>
 
   <!-- Leaflet via jsDelivr: more reliable than unpkg in some enterprise networks -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
@@ -95,6 +95,19 @@
       margin:5px 0;
     }
     .swatch{width:16px;height:10px;border-radius:3px}
+    .surface-toggle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin:0;
+      color:var(--text);
+      font-size:13px;
+    }
+    .surface-toggle input{width:auto;margin:0}
+    .surface-toggle label{display:flex;align-items:center;gap:7px;margin:0;color:var(--text);cursor:pointer}
+    .surface-state{font-size:11px;color:var(--muted);white-space:nowrap}
+    .surface-swatch{width:16px;height:10px;border-radius:3px;border:1px solid rgba(31,41,55,.25)}
     .tiny{font-size:11px;color:var(--muted)}
     .warn{
       margin-top:8px;
@@ -145,7 +158,7 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <h1>港區 AI 攝影機規劃工具 v0.6</h1>
+    <h1>港區 AI 攝影機規劃工具 v0.7</h1>
     <div class="sub">Leaflet + OpenStreetMap + FOV + YOLO 8/16/32 px coverage</div>
 
     <h2>攝影機</h2>
@@ -252,6 +265,19 @@
       <option value="nlscPhoto">NLSC 正射影像</option>
     </select>
 
+    <div class="card" id="surfaceLayerCard">
+      <div class="surface-toggle">
+        <label for="surfaceToggle">
+          <input id="surfaceToggle" type="checkbox" checked disabled>
+          水域／陸地 overlay
+        </label>
+        <span class="surface-state" id="surfaceState">載入中</span>
+      </div>
+      <div class="legend-row"><span class="surface-swatch" style="background:rgba(36,126,190,.38)"></span>水域 water</div>
+      <div class="legend-row"><span class="surface-swatch" style="background:rgba(133,116,91,.20)"></span>陸地 land</div>
+      <div class="tiny" id="surfaceHelp">固定 GeoJSON 載入中；分類工具會在圖層準備完成後啟用。</div>
+    </div>
+
     <div class="card">
       <div class="metric"><span>Pixel pitch</span><b id="pixelPitch">—</b></div>
       <div class="metric"><span>HFOV</span><b id="hfov">—</b></div>
@@ -273,7 +299,7 @@
 
     <h2>點擊目標結果</h2>
     <div class="card" id="targetResult">
-      <div class="tiny">在地圖點任一位置，即時計算該點的距離、FOV 與 bbox 尺度。</div>
+      <div class="tiny">在地圖點任一位置，即時計算該點的距離、FOV、bbox 尺度與地表類型。</div>
     </div>
 
     <div class="warn">
@@ -390,6 +416,10 @@
     layers: [osm]
   }).setView(harborCenter, 13);
 
+  // Keep the surface reference below the FOV / YOLO coverage overlays.
+  map.createPane('surface-pane');
+  map.getPane('surface-pane').style.zIndex = 350;
+
   L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
   const baseMapSelect = document.getElementById('baseMapSelect');
@@ -443,8 +473,157 @@
   watchTileLayer(nlscEmap, 'NLSC 通用電子地圖');
   watchTileLayer(nlscPhoto, 'NLSC 正射影像');
 
+  const surfaceToggle = document.getElementById('surfaceToggle');
+  const surfaceStateEl = document.getElementById('surfaceState');
+  const surfaceHelpEl = document.getElementById('surfaceHelp');
+  let surfaceLoadState = 'loading';
+  let surfaceBbox = null;
+  let surfaceFeatures = [];
+  let surfaceLayer = null;
+
+  function pointOnSegment(point, start, end){
+    const [x,y] = point;
+    const [x1,y1] = start;
+    const [x2,y2] = end;
+    const cross = (x-x1)*(y2-y1) - (y-y1)*(x2-x1);
+    if (Math.abs(cross) > 1e-10) return false;
+    return x >= Math.min(x1,x2)-1e-10 && x <= Math.max(x1,x2)+1e-10 &&
+      y >= Math.min(y1,y2)-1e-10 && y <= Math.max(y1,y2)+1e-10;
+  }
+
+  function pointInRing(point, ring){
+    let inside = false;
+    for (let i=0,j=ring.length-1; i<ring.length; j=i++){
+      const a = ring[i];
+      const b = ring[j];
+      if (pointOnSegment(point,a,b)) return 'boundary';
+      const intersects = ((a[1] > point[1]) !== (b[1] > point[1])) &&
+        (point[0] < (b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0]);
+      if (intersects) inside = !inside;
+    }
+    return inside ? 'inside' : 'outside';
+  }
+
+  function pointInPolygon(point, rings){
+    const outer = pointInRing(point,rings[0]);
+    if (outer === 'outside') return 'outside';
+    for (let i=1;i<rings.length;i++){
+      const hole = pointInRing(point,rings[i]);
+      if (hole === 'inside' || hole === 'boundary') return 'outside';
+    }
+    return outer;
+  }
+
+  function pointInGeometry(point, geometry){
+    if (!geometry) return 'outside';
+    if (geometry.type === 'Polygon') return pointInPolygon(point,geometry.coordinates);
+    if (geometry.type === 'MultiPolygon'){
+      let boundary = false;
+      for (const polygon of geometry.coordinates){
+        const result = pointInPolygon(point,polygon);
+        if (result === 'inside') return 'inside';
+        if (result === 'boundary') boundary = true;
+      }
+      return boundary ? 'boundary' : 'outside';
+    }
+    return 'outside';
+  }
+
+  function classifySurfacePoint(lng,lat){
+    if (surfaceLoadState === 'loading') return 'loading';
+    if (surfaceLoadState === 'failed' || !surfaceBbox) return 'unavailable';
+    if (surfaceLoadState !== 'ready') return 'unknown';
+    if (lng < surfaceBbox[0] || lng > surfaceBbox[2] || lat < surfaceBbox[1] || lat > surfaceBbox[3]){
+      return 'unknown';
+    }
+    let water = false;
+    let land = false;
+    for (const feature of surfaceFeatures){
+      const hit = pointInGeometry([lng,lat],feature.geometry);
+      if (hit === 'inside' || hit === 'boundary'){
+        if (feature.properties.surface === 'water') water = true;
+        if (feature.properties.surface === 'land') land = true;
+      }
+    }
+    // Shared water/land boundaries intentionally resolve to water.
+    return water ? 'water' : land ? 'land' : 'unknown';
+  }
+
+  function surfaceLabel(value){
+    if (value === 'loading') return '載入中';
+    if (value === 'unavailable') return '無法判定';
+    if (value === 'water') return 'water';
+    if (value === 'land') return 'land';
+    return 'Unknown';
+  }
+
+  function validateSurfaceData(data){
+    if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)){
+      throw new Error('GeoJSON 必須是 FeatureCollection');
+    }
+    if (!Array.isArray(data.bbox) || data.bbox.length !== 4 || data.bbox.some(value => !Number.isFinite(value))){
+      throw new Error('GeoJSON bbox 無效');
+    }
+    for (const feature of data.features){
+      const surface = feature && feature.properties && feature.properties.surface;
+      const geometry = feature && feature.geometry;
+      if (!['water','land'].includes(surface) || !geometry || !['Polygon','MultiPolygon'].includes(geometry.type)){
+        throw new Error('GeoJSON 含有不支援的 surface 或 geometry');
+      }
+    }
+  }
+
+  function surfaceStyle(feature){
+    const isWater = feature.properties.surface === 'water';
+    return {
+      color: isWater ? '#247ebe' : '#85745b',
+      weight: isWater ? 0.7 : 0.6,
+      opacity: isWater ? 0.7 : 0.45,
+      fillColor: isWater ? '#247ebe' : '#85745b',
+      fillOpacity: isWater ? 0.30 : 0.18
+    };
+  }
+
+  function setSurfaceLoadState(state, message){
+    surfaceLoadState = state;
+    surfaceStateEl.textContent = state === 'loading' ? '載入中' : state === 'ready' ? '已載入' : '無法判定';
+    surfaceHelpEl.textContent = message;
+  }
+
+  surfaceToggle.addEventListener('change', () => {
+    if (surfaceLoadState !== 'ready' || !surfaceLayer) return;
+    if (surfaceToggle.checked) surfaceLayer.addTo(map);
+    else map.removeLayer(surfaceLayer);
+  });
+
+  fetch('./data/kaohsiung-harbor-surface.geojson')
+    .then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then(data => {
+      validateSurfaceData(data);
+      surfaceBbox = data.bbox;
+      surfaceFeatures = data.features;
+      surfaceLayer = L.geoJSON(data, {pane:'surface-pane', interactive:false, style:surfaceStyle});
+      surfaceLayer.addTo(map);
+      surfaceToggle.disabled = false;
+      surfaceToggle.checked = true;
+      setSurfaceLoadState('ready','固定 GeoJSON 已載入；關閉視覺圖層不會停用點擊分類。');
+      if (targetMarker) updateTargetResult(targetMarker.getLatLng());
+    })
+    .catch(error => {
+      console.warn('Surface layer unavailable:', error);
+      setSurfaceLoadState('failed', '請使用 localhost 開啟：python -m http.server 8765 --bind 127.0.0.1。既有地圖、FOV 與 YOLO 仍可使用。');
+      document.getElementById('status').textContent = '水陸圖資無法載入；請使用 localhost 開啟，其他地圖與計算功能仍可使用。';
+    });
+
+  window.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry};
+  window.mapForTest = map;
+
   let cameraLatLng = L.latLng(22.6082, 120.2824);
   let cameraMarker = L.marker(cameraLatLng, {draggable:true}).addTo(map).bindTooltip('Camera A');
+  window.cameraMarkerForTest = cameraMarker;
   let targetMarker = null;
   let coverageLayers = [];
   let placeMode = false;
@@ -724,9 +903,11 @@
     const shortPx = (val('targetShort')*focal)/(d*c.pitchMm);
     const p3 = shortPx/8, p4=shortPx/16, p5=shortPx/32;
     const horizonOK = d <= c.horizonKm*1000;
+    const surface = surfaceLabel(classifySurfacePoint(latlng.lng,latlng.lat));
 
     document.getElementById('targetResult').innerHTML = `
       <div class="metric"><span>距離</span><b>${fmtM(d)}</b></div>
+      <div class="metric"><span>地表類型</span><b>${surface}</b></div>
       <div class="metric"><span>方位角</span><b>${bearing.toFixed(1)}°</b></div>
       <div class="metric"><span>在 HFOV 內</span><b>${inHFOV ? 'Yes' : 'No'}</b></div>
       <div class="metric"><span>地平線內</span><b>${horizonOK ? 'Yes' : 'No'}</b></div>
