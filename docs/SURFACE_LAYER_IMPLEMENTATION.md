@@ -58,7 +58,7 @@ GeoJSON：[`../data/kaohsiung-harbor-surface.geojson`](../data/kaohsiung-harbor-
 
 ## Leaflet 實作
 
-`harbor_ai_camera_planner_v06.html` 在 Base map 下方建立：
+`index.html` 在 Base map 下方建立：
 
 - 預設勾選且載入完成前停用的 `surfaceToggle` checkbox。
 - water／land 圖例與載入狀態。
@@ -86,7 +86,7 @@ GeoJSON：[`../data/kaohsiung-harbor-surface.geojson`](../data/kaohsiung-harbor-
 | --- | --- | --- |
 | `loading` | checkbox disabled、狀態「載入中」 | 地圖、Camera、FOV／YOLO 可用；點擊結果顯示「載入中」 |
 | `ready` | checkbox enabled、預設顯示 | 全部可用；關閉視覺 layer 不影響分類 |
-| HTTP 404、`file://`、JSON/schema 錯誤 | 狀態「無法判定」，提示使用 `python -m http.server 8765 --bind 127.0.0.1` | 地圖、底圖、Camera、FOV／YOLO 繼續可用 |
+| HTTP 404、`file://`、JSON/schema 錯誤 | 狀態「無法判定」，提示雙擊 `start-host.cmd` 或使用 `python -m http.server 8765 --bind 127.0.0.1`，再開啟 `/index.html` | 地圖、底圖、Camera、FOV／YOLO 繼續可用 |
 | bbox 外 | 分類結果 `Unknown` | 其他計算繼續可用 |
 
 ## 驗證方式

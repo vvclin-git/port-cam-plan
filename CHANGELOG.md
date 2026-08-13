@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.1 — 2026-08-14
+
+- 將 App 正式入口由 `harbor_ai_camera_planner_v06.html` 改為 `index.html`。
+- 新增可攜式 `start-host.cmd`，從腳本所在目錄啟動 localhost HTTP server 並自動開啟 `/index.html`。
+- 同步更新 README、surface layer 文件、localhost 錯誤提示與驗證命令。
+- 未修改 FOV、YOLO、Camera、target、GeoJSON、Leaflet 或 ray-casting 計算邏輯。
+
 ## v0.8.0 - 2026-08-13
 
 - Added `ray_cast_test.py`, a Python CLI and Tkinter/Pillow desktop tool for

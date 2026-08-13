@@ -10,7 +10,17 @@ v0.7 的水陸資料是相對路徑的靜態 GeoJSON，必須透過 localhost �
 python -m http.server 8765 --bind 127.0.0.1
 ```
 
-然後開啟 <http://127.0.0.1:8765/harbor_ai_camera_planner_v06.html>。直接雙擊 HTML 仍可使用部分地圖、FOV 與 YOLO 功能，但水陸 GeoJSON 的 `fetch()` 會失敗並顯示「請使用 localhost 開啟」。
+然後開啟 <http://127.0.0.1:8765/index.html>。正式入口是 `index.html`；直接雙擊 HTML 仍可使用部分地圖、FOV 與 YOLO 功能，但水陸 GeoJSON 的 `fetch()` 會失敗。
+
+### 快速啟動
+
+在專案根目錄雙擊 [`start-host.cmd`](./start-host.cmd)，它會以專案根目錄啟動 `127.0.0.1:8765`，並自動開啟 <http://127.0.0.1:8765/index.html>。Server 會在命令視窗以前景執行，按 `Ctrl+C` 停止。
+
+若 Windows 找不到 Python，請先安裝 Python 並確認 `python` 已加入 PATH，或手動執行：
+
+```powershell
+python -m http.server 8765 --bind 127.0.0.1
+```
 
 ## 功能
 
@@ -59,8 +69,9 @@ Sensor active area 是 optical-format 工程近似值；正式設計應以攝影
 
 - 版本固定為 Leaflet 1.9.4，來源為 [Leaflet 官方 v1.9.4 release](https://github.com/Leaflet/Leaflet/releases/tag/v1.9.4)。
 - `leaflet/leaflet.js`、`leaflet/leaflet.css`、`leaflet/images/` 與 `leaflet/LICENSE` 均隨專案提交；CSS 使用官方相對路徑 `images/...`，不可移動或省略 images 目錄。
-- `harbor_ai_camera_planner_v06.html` 使用 `./leaflet/leaflet.css` 與 `./leaflet/leaflet.js`，不使用 `/` 開頭的根目錄路徑，因此可部署在 GitHub Pages repository site、Vercel static hosting、IIS virtual directory、NAS 子目錄或其他網站子目錄。
+- `index.html` 使用 `./leaflet/leaflet.css` 與 `./leaflet/leaflet.js`，不使用 `/` 開頭的根目錄路徑，因此可部署在 GitHub Pages repository site、Vercel static hosting、IIS virtual directory、NAS 子目錄或其他網站子目錄。
 - 支援 localhost HTTP server：`python -m http.server 8765 --bind 127.0.0.1`。
+- `start-host.cmd` 會從腳本所在目錄啟動 server，不依賴固定的本機絕對路徑，也不需要 npm 或 backend。
 - 也可直接部署整個專案目錄到 GitHub Pages、Vercel static hosting、IIS 或 NAS static hosting；需保留 `leaflet/`、`data/` 與 HTML 的相對目錄結構。
 - OSM／NLSC 圖磚 URL 維持線上服務，離線部署不包含圖磚快取或圖磚伺服器。
 - Leaflet 採 BSD-2-Clause；授權全文見 [`leaflet/LICENSE`](./leaflet/LICENSE)。
@@ -109,7 +120,7 @@ CLI、profile schema、輸出檔案與驗收邊界見
 
 ```powershell
 python -m json.tool data/kaohsiung-harbor-surface.geojson > $null
-node -e "const fs=require('fs');const h=fs.readFileSync('harbor_ai_camera_planner_v06.html','utf8');const a=h.indexOf('<script>',h.indexOf('leaflet.js'));const b=h.indexOf('</script>',a);new Function(h.slice(a+8,b));console.log('inline script syntax ok')"
+node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const a=h.indexOf('<script>',h.indexOf('leaflet.js'));const b=h.indexOf('</script>',a);new Function(h.slice(a+8,b));console.log('inline script syntax ok')"
 ```
 
 瀏覽器驗證應確認 localhost 載入、預設 overlay、checkbox 開關、三種底圖、一般點擊分類、Camera 放置模式，以及 GeoJSON 404 時既有功能仍可使用。NLSC 正射影像至少抽查 10 點、岸線 5–15 m 的潮位／資料日期差異列為容許帶；ray casting 與相機視角預覽不在 v0.7 範圍。

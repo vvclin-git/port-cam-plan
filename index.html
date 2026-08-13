@@ -735,8 +735,8 @@
     })
     .catch(error => {
       console.warn('Surface layer unavailable:', error);
-      setSurfaceLoadState('failed', '請使用 localhost 開啟：python -m http.server 8765 --bind 127.0.0.1。既有地圖、FOV 與 YOLO 仍可使用。');
-      document.getElementById('status').textContent = '水陸圖資無法載入；請使用 localhost 開啟，其他地圖與計算功能仍可使用。';
+      setSurfaceLoadState('failed', '請雙擊 start-host.cmd，或使用 localhost：python -m http.server 8765 --bind 127.0.0.1，再開啟 /index.html。既有地圖、FOV 與 YOLO 仍可使用。');
+      document.getElementById('status').textContent = '水陸圖資無法載入；請使用 start-host.cmd 或 localhost 開啟 /index.html，其他地圖與計算功能仍可使用。';
     });
 
   window.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry};
