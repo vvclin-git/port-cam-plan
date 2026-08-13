@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.8.0 - 2026-08-13
+
+- Added `ray_cast_test.py`, a Python CLI and Tkinter/Pillow desktop tool for
+  Camera Scene ray casting, cached tile RGB sampling, CIELAB CIE76 water
+  classification, optional HSV gating, and nearest-neighbour previews.
+- Added background tile/ray work, profile validation, `ray-results.json`,
+  classification preview images, `report.txt`, and focused unit tests.
+- Colour/profile changes reclassify cached samples; changing scene, zoom, grid,
+  or sampling neighborhood expires the old run and requires a new run.
+
+## v0.7.2 — 2026-08-13
+
+- 新增 `camera-scene/1.1` Camera Scene JSON 下載與複製功能，匯出當下 Camera 位置、高度、Heading、Tilt、sensor、解析度、焦距、HFOV／VFOV 與座標慣例。
+- 新增目前啟用底圖來源與 OSM／NLSC URL 座標順序的 tile source 匯出。
+- 新增依現有 near／far、HFOV／VFOV、horizon 模型產生的保守 FOV tile manifest，含一圈 tile padding、horizon clipping、WGS84 bounds 與可重建 URL。
+- 圖磚服務無法連線時仍可匯出；不下載或內嵌圖磚，也不匯出 Cookie、Token、Authorization header、Proxy credential 或瀏覽器憑證。
+- 未改動既有 Camera marker、FOV、YOLO coverage、target calculation 與 OSM／NLSC 圖磚載入方式。
+
+## v0.7.1 — 2026-08-13
+
+- 將 Leaflet 1.9.4 官方 distribution 的 JS、CSS、五個 images 與 BSD-2-Clause LICENSE 加入 `leaflet/`。
+- 將 HTML 的 Leaflet 引用改為 `./leaflet/leaflet.css` 與 `./leaflet/leaflet.js`，移除 jsDelivr 依賴。
+- 保留 OSM／NLSC 線上圖磚 URL，不包含圖磚離線化。
+- 更新 Leaflet 本機資源遺失提示，涵蓋 JS、CSS、images、檔名大小寫與相對路徑檢查。
+- 未修改 FOV、VFOV、地平線、YOLO、Camera／target 操作與水陸 GeoJSON 邏輯。
+
+## v0.7 — 2026-08-13
+
+- 新增 `data/kaohsiung-harbor-surface.geojson` 固定 WGS84 水陸快照，範圍為 `120.24–120.36 E / 22.55–22.68 N`。
+- 在 Base map 下方加入預設開啟的水域／陸地 overlay、圖例與載入狀態；圖層置於 FOV／YOLO coverage 下方。
+- 新增支援 Polygon、MultiPolygon、holes 與 `[longitude, latitude]` 的無外部套件分類器，water 優先於 land。
+- 一般地圖點擊結果新增「地表類型」；Camera 放置模式維持只移動 Camera、不觸發 target 分類。
+- 水陸 GeoJSON 載入失敗時提示使用 localhost，且不阻止既有底圖、FOV 與 YOLO 功能。
+- 更新 README，新增 `docs/SURFACE_LAYER_IMPLEMENTATION.md`，記錄來源、ODbL 署名、schema、處理順序、驗證方式與後續 ray casting 接點。
+
 ## v0.6 — 2026-08-13
 
 - 建立單檔港區 AI 攝影機規劃工具。

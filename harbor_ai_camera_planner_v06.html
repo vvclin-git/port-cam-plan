@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>港區 AI 攝影機規劃工具 v0.6</title>
+  <title>港區 AI 攝影機規劃工具 v0.7</title>
 
-  <!-- Leaflet via jsDelivr: more reliable than unpkg in some enterprise networks -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <!-- Leaflet 1.9.4 official distribution, served from this project. -->
+  <link id="leafletCss" rel="stylesheet" href="./leaflet/leaflet.css">
 
   <style>
     :root{
@@ -95,6 +95,22 @@
       margin:5px 0;
     }
     .swatch{width:16px;height:10px;border-radius:3px}
+    .surface-toggle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin:0;
+      color:var(--text);
+      font-size:13px;
+    }
+    .surface-toggle input{width:auto;margin:0}
+    .surface-toggle label{display:flex;align-items:center;gap:7px;margin:0;color:var(--text);cursor:pointer}
+    .surface-state{font-size:11px;color:var(--muted);white-space:nowrap}
+    .surface-swatch{width:16px;height:10px;border-radius:3px;border:1px solid rgba(31,41,55,.25)}
+    .export-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+    .export-status{margin-top:8px;font-size:12px;color:var(--muted);min-height:1.2em}
+    .export-error{margin-top:6px;font-size:12px;color:#a33a00;white-space:pre-line}
     .tiny{font-size:11px;color:var(--muted)}
     .warn{
       margin-top:8px;
@@ -145,7 +161,7 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <h1>港區 AI 攝影機規劃工具 v0.6</h1>
+    <h1>港區 AI 攝影機規劃工具 v0.7</h1>
     <div class="sub">Leaflet + OpenStreetMap + FOV + YOLO 8/16/32 px coverage</div>
 
     <h2>攝影機</h2>
@@ -252,6 +268,19 @@
       <option value="nlscPhoto">NLSC 正射影像</option>
     </select>
 
+    <div class="card" id="surfaceLayerCard">
+      <div class="surface-toggle">
+        <label for="surfaceToggle">
+          <input id="surfaceToggle" type="checkbox" checked disabled>
+          水域／陸地 overlay
+        </label>
+        <span class="surface-state" id="surfaceState">載入中</span>
+      </div>
+      <div class="legend-row"><span class="surface-swatch" style="background:rgba(36,126,190,.38)"></span>水域 water</div>
+      <div class="legend-row"><span class="surface-swatch" style="background:rgba(133,116,91,.20)"></span>陸地 land</div>
+      <div class="tiny" id="surfaceHelp">固定 GeoJSON 載入中；分類工具會在圖層準備完成後啟用。</div>
+    </div>
+
     <div class="card">
       <div class="metric"><span>Pixel pitch</span><b id="pixelPitch">—</b></div>
       <div class="metric"><span>HFOV</span><b id="hfov">—</b></div>
@@ -273,11 +302,24 @@
 
     <h2>點擊目標結果</h2>
     <div class="card" id="targetResult">
-      <div class="tiny">在地圖點任一位置，即時計算該點的距離、FOV 與 bbox 尺度。</div>
+      <div class="tiny">在地圖點任一位置，即時計算該點的距離、FOV、bbox 尺度與地表類型。</div>
     </div>
 
     <div class="warn">
       底圖目前可切換 OpenStreetMap、NLSC 通用電子地圖、NLSC 正射影像，三者皆需網路；若其中一個服務被公司網路阻擋，可用左側選單切換其他圖層。
+    </div>
+    <h2>Ray Casting 測試匯出</h2>
+    <div class="card" id="cameraSceneExport">
+      <label for="tileZoomSelect">圖磚 zoom</label>
+      <select id="tileZoomSelect" aria-label="Tile zoom"></select>
+      <div class="tiny" id="tileZoomHelp">依目前啟用的底圖來源更新支援範圍。</div>
+      <div class="metric"><span>Schema</span><b>camera-scene/1.1</b></div>
+      <div class="export-actions">
+        <button id="downloadCameraScene">下載 Camera Scene JSON</button>
+        <button id="copyCameraScene" class="secondary">複製 Camera Scene JSON</button>
+      </div>
+      <div class="export-status" id="exportState" role="status" aria-live="polite">尚未匯出。</div>
+      <div class="export-error" id="exportError" role="alert"></div>
     </div>
   </aside>
 
@@ -286,14 +328,14 @@
     <div class="status" id="status">預設 Camera 位於高雄港附近；可點選「地圖點選 Camera」重新設定。</div>
     <div class="map-error" id="mapError">
       <div>
-        <b>底圖載入失敗。</b><br>
-        請確認目前網路可連到所選圖磚服務與 <code>cdn.jsdelivr.net</code>。請用左側選單切換其他底圖。
+        <b>地圖或 Leaflet 資源載入失敗。</b><br>
+        請確認目前網路可連到所選圖磚服務，並確認專案的 <code>leaflet/</code> 目錄完整部署。
       </div>
     </div>
   </main>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="./leaflet/leaflet.js"></script>
 <script>
 (() => {
   // Standard optical-format approximations for a 16:9 active image.
@@ -327,6 +369,32 @@
   const resolutionPreset = document.getElementById('resolutionPreset');
   const resW = document.getElementById('resW');
   const resH = document.getElementById('resH');
+  let leafletResourceError = false;
+
+  function showLeafletResourceError(){
+    leafletResourceError = true;
+    document.getElementById('mapError').style.display = 'flex';
+    document.getElementById('mapError').querySelector('div').innerHTML =
+      '<b>Leaflet 本機資源載入失敗。</b><br>' +
+      '請確認 <code>leaflet/leaflet.js</code>、<code>leaflet/leaflet.css</code>、<code>leaflet/images/</code> 已部署，' +
+      '並檢查檔名大小寫與相對路徑是否正確。';
+    document.getElementById('status').textContent =
+      'Leaflet 本機資源載入失敗；請檢查 leaflet/ 目錄、images/ 圖片與相對路徑。';
+  }
+
+  function checkLeafletImageResources(){
+    [
+      'layers.png',
+      'layers-2x.png',
+      'marker-icon.png',
+      'marker-icon-2x.png',
+      'marker-shadow.png'
+    ].forEach(file => {
+      const image = new Image();
+      image.onerror = showLeafletResourceError;
+      image.src = `./leaflet/images/${file}`;
+    });
+  }
 
   function applySensorPreset() {
     const key = sensorFormat.value;
@@ -352,11 +420,23 @@
     updateAll();
   }
 
+  const leafletCss = document.getElementById('leafletCss');
+  let leafletCssLoaded = false;
+  try {
+    leafletCssLoaded = Boolean(leafletCss && leafletCss.sheet && leafletCss.sheet.cssRules && leafletCss.sheet.cssRules.length);
+  } catch (error) {
+    leafletCssLoaded = false;
+  }
+  if (!leafletCssLoaded) {
+    showLeafletResourceError();
+  }
+
   if (typeof L === 'undefined') {
-    document.getElementById('mapError').style.display = 'flex';
-    document.getElementById('status').textContent = 'Leaflet 載入失敗。';
+    showLeafletResourceError();
     return;
   }
+
+  checkLeafletImageResources();
 
   const harborCenter = [22.6108, 120.2890];
 
@@ -385,10 +465,58 @@
     }
   );
 
+  const tileSourceByKey = {
+    osm: {
+      id: 'osm',
+      name: 'OpenStreetMap',
+      type: 'xyz',
+      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      crs: 'EPSG:3857',
+      tileSizePx: 256,
+      minZoom: 0,
+      maxZoom: 19,
+      urlCoordinateOrder: 'z-x-y',
+      networkRequired: true,
+      attribution: '© OpenStreetMap contributors'
+    },
+    nlscEmap: {
+      id: 'nlscEmap',
+      name: 'NLSC 通用電子地圖',
+      type: 'wmts-google-maps-compatible',
+      urlTemplate: 'https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}',
+      crs: 'EPSG:3857',
+      tileMatrixSet: 'GoogleMapsCompatible',
+      tileSizePx: 256,
+      minZoom: 0,
+      maxZoom: 19,
+      urlCoordinateOrder: 'z-y-x',
+      networkRequired: true,
+      attribution: '© 國土測繪中心 NLSC'
+    },
+    nlscPhoto: {
+      id: 'nlscPhoto',
+      name: 'NLSC 正射影像',
+      type: 'wmts-google-maps-compatible',
+      urlTemplate: 'https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}',
+      crs: 'EPSG:3857',
+      tileMatrixSet: 'GoogleMapsCompatible',
+      tileSizePx: 256,
+      minZoom: 0,
+      maxZoom: 19,
+      urlCoordinateOrder: 'z-y-x',
+      networkRequired: true,
+      attribution: '© 國土測繪中心 NLSC'
+    }
+  };
+
   const map = L.map('map', {
     zoomControl: false,
     layers: [osm]
   }).setView(harborCenter, 13);
+
+  // Keep the surface reference below the FOV / YOLO coverage overlays.
+  map.createPane('surface-pane');
+  map.getPane('surface-pane').style.zIndex = 350;
 
   L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
@@ -405,14 +533,37 @@
     });
     const next = baseMapByKey[key] || osm;
     next.addTo(map);
-    document.getElementById('mapError').style.display = 'none';
+    if (!leafletResourceError) {
+      document.getElementById('mapError').style.display = 'none';
+    }
     document.getElementById('status').textContent =
       '目前底圖：' + baseMapSelect.options[baseMapSelect.selectedIndex].text;
   }
 
   baseMapSelect.addEventListener('change', () => {
     switchBaseMap(baseMapSelect.value);
+    syncTileZoomOptions();
   });
+
+  const tileZoomSelect = document.getElementById('tileZoomSelect');
+  const tileZoomHelp = document.getElementById('tileZoomHelp');
+
+  function syncTileZoomOptions(){
+    const source = tileSourceByKey[baseMapSelect.value] || tileSourceByKey.osm;
+    const previous = tileZoomSelect.value === '' ? 18 : Number(tileZoomSelect.value);
+    const preferred = Number.isInteger(previous) ? previous : 18;
+    tileZoomSelect.replaceChildren();
+    for (let zoom = source.minZoom; zoom <= source.maxZoom; zoom++) {
+      const option = document.createElement('option');
+      option.value = String(zoom);
+      option.textContent = String(zoom);
+      tileZoomSelect.appendChild(option);
+    }
+    tileZoomSelect.value = String(Math.min(source.maxZoom, Math.max(source.minZoom, preferred)));
+    tileZoomHelp.textContent = `${source.name}: zoom ${source.minZoom}–${source.maxZoom}`;
+  }
+
+  syncTileZoomOptions();
 
   const tileErrorCounts = new Map();
 
@@ -422,7 +573,7 @@
     layer.on('tileerror', () => {
       const n = (tileErrorCounts.get(label) || 0) + 1;
       tileErrorCounts.set(label, n);
-      if (n >= 3 && map.hasLayer(layer)) {
+      if (n >= 3 && map.hasLayer(layer) && !leafletResourceError) {
         document.getElementById('mapError').style.display = 'flex';
         document.getElementById('mapError').querySelector('div').innerHTML =
           `<b>${label} 底圖載入失敗。</b><br>` +
@@ -433,7 +584,7 @@
     });
 
     layer.on('load', () => {
-      if (map.hasLayer(layer)) {
+      if (map.hasLayer(layer) && !leafletResourceError) {
         document.getElementById('mapError').style.display = 'none';
       }
     });
@@ -443,8 +594,157 @@
   watchTileLayer(nlscEmap, 'NLSC 通用電子地圖');
   watchTileLayer(nlscPhoto, 'NLSC 正射影像');
 
+  const surfaceToggle = document.getElementById('surfaceToggle');
+  const surfaceStateEl = document.getElementById('surfaceState');
+  const surfaceHelpEl = document.getElementById('surfaceHelp');
+  let surfaceLoadState = 'loading';
+  let surfaceBbox = null;
+  let surfaceFeatures = [];
+  let surfaceLayer = null;
+
+  function pointOnSegment(point, start, end){
+    const [x,y] = point;
+    const [x1,y1] = start;
+    const [x2,y2] = end;
+    const cross = (x-x1)*(y2-y1) - (y-y1)*(x2-x1);
+    if (Math.abs(cross) > 1e-10) return false;
+    return x >= Math.min(x1,x2)-1e-10 && x <= Math.max(x1,x2)+1e-10 &&
+      y >= Math.min(y1,y2)-1e-10 && y <= Math.max(y1,y2)+1e-10;
+  }
+
+  function pointInRing(point, ring){
+    let inside = false;
+    for (let i=0,j=ring.length-1; i<ring.length; j=i++){
+      const a = ring[i];
+      const b = ring[j];
+      if (pointOnSegment(point,a,b)) return 'boundary';
+      const intersects = ((a[1] > point[1]) !== (b[1] > point[1])) &&
+        (point[0] < (b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0]);
+      if (intersects) inside = !inside;
+    }
+    return inside ? 'inside' : 'outside';
+  }
+
+  function pointInPolygon(point, rings){
+    const outer = pointInRing(point,rings[0]);
+    if (outer === 'outside') return 'outside';
+    for (let i=1;i<rings.length;i++){
+      const hole = pointInRing(point,rings[i]);
+      if (hole === 'inside' || hole === 'boundary') return 'outside';
+    }
+    return outer;
+  }
+
+  function pointInGeometry(point, geometry){
+    if (!geometry) return 'outside';
+    if (geometry.type === 'Polygon') return pointInPolygon(point,geometry.coordinates);
+    if (geometry.type === 'MultiPolygon'){
+      let boundary = false;
+      for (const polygon of geometry.coordinates){
+        const result = pointInPolygon(point,polygon);
+        if (result === 'inside') return 'inside';
+        if (result === 'boundary') boundary = true;
+      }
+      return boundary ? 'boundary' : 'outside';
+    }
+    return 'outside';
+  }
+
+  function classifySurfacePoint(lng,lat){
+    if (surfaceLoadState === 'loading') return 'loading';
+    if (surfaceLoadState === 'failed' || !surfaceBbox) return 'unavailable';
+    if (surfaceLoadState !== 'ready') return 'unknown';
+    if (lng < surfaceBbox[0] || lng > surfaceBbox[2] || lat < surfaceBbox[1] || lat > surfaceBbox[3]){
+      return 'unknown';
+    }
+    let water = false;
+    let land = false;
+    for (const feature of surfaceFeatures){
+      const hit = pointInGeometry([lng,lat],feature.geometry);
+      if (hit === 'inside' || hit === 'boundary'){
+        if (feature.properties.surface === 'water') water = true;
+        if (feature.properties.surface === 'land') land = true;
+      }
+    }
+    // Shared water/land boundaries intentionally resolve to water.
+    return water ? 'water' : land ? 'land' : 'unknown';
+  }
+
+  function surfaceLabel(value){
+    if (value === 'loading') return '載入中';
+    if (value === 'unavailable') return '無法判定';
+    if (value === 'water') return 'water';
+    if (value === 'land') return 'land';
+    return 'Unknown';
+  }
+
+  function validateSurfaceData(data){
+    if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)){
+      throw new Error('GeoJSON 必須是 FeatureCollection');
+    }
+    if (!Array.isArray(data.bbox) || data.bbox.length !== 4 || data.bbox.some(value => !Number.isFinite(value))){
+      throw new Error('GeoJSON bbox 無效');
+    }
+    for (const feature of data.features){
+      const surface = feature && feature.properties && feature.properties.surface;
+      const geometry = feature && feature.geometry;
+      if (!['water','land'].includes(surface) || !geometry || !['Polygon','MultiPolygon'].includes(geometry.type)){
+        throw new Error('GeoJSON 含有不支援的 surface 或 geometry');
+      }
+    }
+  }
+
+  function surfaceStyle(feature){
+    const isWater = feature.properties.surface === 'water';
+    return {
+      color: isWater ? '#247ebe' : '#85745b',
+      weight: isWater ? 0.7 : 0.6,
+      opacity: isWater ? 0.7 : 0.45,
+      fillColor: isWater ? '#247ebe' : '#85745b',
+      fillOpacity: isWater ? 0.30 : 0.18
+    };
+  }
+
+  function setSurfaceLoadState(state, message){
+    surfaceLoadState = state;
+    surfaceStateEl.textContent = state === 'loading' ? '載入中' : state === 'ready' ? '已載入' : '無法判定';
+    surfaceHelpEl.textContent = message;
+  }
+
+  surfaceToggle.addEventListener('change', () => {
+    if (surfaceLoadState !== 'ready' || !surfaceLayer) return;
+    if (surfaceToggle.checked) surfaceLayer.addTo(map);
+    else map.removeLayer(surfaceLayer);
+  });
+
+  fetch('./data/kaohsiung-harbor-surface.geojson')
+    .then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then(data => {
+      validateSurfaceData(data);
+      surfaceBbox = data.bbox;
+      surfaceFeatures = data.features;
+      surfaceLayer = L.geoJSON(data, {pane:'surface-pane', interactive:false, style:surfaceStyle});
+      surfaceLayer.addTo(map);
+      surfaceToggle.disabled = false;
+      surfaceToggle.checked = true;
+      setSurfaceLoadState('ready','固定 GeoJSON 已載入；關閉視覺圖層不會停用點擊分類。');
+      if (targetMarker) updateTargetResult(targetMarker.getLatLng());
+    })
+    .catch(error => {
+      console.warn('Surface layer unavailable:', error);
+      setSurfaceLoadState('failed', '請使用 localhost 開啟：python -m http.server 8765 --bind 127.0.0.1。既有地圖、FOV 與 YOLO 仍可使用。');
+      document.getElementById('status').textContent = '水陸圖資無法載入；請使用 localhost 開啟，其他地圖與計算功能仍可使用。';
+    });
+
+  window.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry};
+  window.mapForTest = map;
+
   let cameraLatLng = L.latLng(22.6082, 120.2824);
   let cameraMarker = L.marker(cameraLatLng, {draggable:true}).addTo(map).bindTooltip('Camera A');
+  window.cameraMarkerForTest = cameraMarker;
   let targetMarker = null;
   let coverageLayers = [];
   let placeMode = false;
@@ -724,9 +1024,11 @@
     const shortPx = (val('targetShort')*focal)/(d*c.pitchMm);
     const p3 = shortPx/8, p4=shortPx/16, p5=shortPx/32;
     const horizonOK = d <= c.horizonKm*1000;
+    const surface = surfaceLabel(classifySurfacePoint(latlng.lng,latlng.lat));
 
     document.getElementById('targetResult').innerHTML = `
       <div class="metric"><span>距離</span><b>${fmtM(d)}</b></div>
+      <div class="metric"><span>地表類型</span><b>${surface}</b></div>
       <div class="metric"><span>方位角</span><b>${bearing.toFixed(1)}°</b></div>
       <div class="metric"><span>在 HFOV 內</span><b>${inHFOV ? 'Yes' : 'No'}</b></div>
       <div class="metric"><span>地平線內</span><b>${horizonOK ? 'Yes' : 'No'}</b></div>
@@ -738,6 +1040,321 @@
       <div class="metric"><span>YOLO estimate</span><b>${classifyYOLO(shortPx)}</b></div>
     `;
   }
+
+  const CAMERA_SCENE_SCHEMA = 'camera-scene/1.1';
+  const TILE_PADDING = 1;
+  const MAXIMUM_RAY_DISTANCE_M = 30000;
+  const WEB_MERCATOR_MAX_LAT = 85.0511287798;
+  const exportStateEl = document.getElementById('exportState');
+  const exportErrorEl = document.getElementById('exportError');
+
+  function normalizeHeading(degrees){
+    return ((degrees % 360) + 360) % 360;
+  }
+
+  function isFinitePositive(value){
+    return Number.isFinite(value) && value > 0;
+  }
+
+  function setExportState(message, error = ''){
+    exportStateEl.textContent = message;
+    exportErrorEl.textContent = error;
+  }
+
+  function validateCameraSceneInputs(){
+    const lat = cameraLatLng.lat;
+    const lng = cameraLatLng.lng;
+    const sw = val('sensorW');
+    const sh = val('sensorH');
+    const rw = val('resW');
+    const rh = val('resH');
+    const focal = val('focal');
+    const camHeight = val('camHeight');
+    const targetHeight = val('targetHeight');
+    const heading = val('heading');
+    const tilt = val('tilt');
+    const zoom = Number(tileZoomSelect.value);
+    const source = tileSourceByKey[baseMapSelect.value] || tileSourceByKey.osm;
+    const errors = [];
+
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) errors.push('Camera latitude 必須介於 -90 與 90。');
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) errors.push('Camera longitude 必須介於 -180 與 180。');
+    if (!isFinitePositive(camHeight)) errors.push('Camera height 必須大於 0 m。');
+    if (!isFinitePositive(sw) || !isFinitePositive(sh)) errors.push('Sensor 尺寸必須是大於 0 的有限數值。');
+    if (!Number.isInteger(rw) || rw <= 0 || !Number.isInteger(rh) || rh <= 0) errors.push('影像寬高必須是正整數。');
+    if (!isFinitePositive(focal)) errors.push('焦距必須大於 0 mm。');
+    if (!Number.isFinite(targetHeight) || targetHeight <= 0) errors.push('目標高度必須大於 0 m，才能沿用地平線距離模型。');
+    if (!Number.isFinite(heading)) errors.push('Heading 必須是有限數值。');
+    if (!Number.isFinite(tilt)) errors.push('Tilt 必須是有限數值。');
+    if (!Number.isInteger(zoom) || zoom < source.minZoom || zoom > source.maxZoom) {
+      errors.push(`Tile zoom 必須介於 ${source.minZoom} 與 ${source.maxZoom}。`);
+    }
+
+    const c = compute();
+    if (!Number.isFinite(c.hfov) || c.hfov <= 0 || c.hfov >= 180) errors.push('HFOV 必須是小於 180° 的有限正數。');
+    if (!Number.isFinite(c.vfov) || c.vfov <= 0 || c.vfov >= 180) errors.push('VFOV 必須是小於 180° 的有限正數。');
+    if (!Number.isFinite(c.horizonKm) || c.horizonKm <= 0) errors.push('地平線距離模型必須產生有限正數。');
+
+    if (errors.length) throw new Error(errors.join('\n'));
+
+    return {lat, lng, sw, sh, rw, rh, focal, camHeight, targetHeight, heading, tilt, zoom, source, c};
+  }
+
+  function longitudeToTileX(longitude, zoom){
+    const n = 2 ** zoom;
+    const wrapped = ((longitude + 180) % 360 + 360) % 360;
+    return Math.min(n - 1, Math.max(0, Math.floor(wrapped / 360 * n)));
+  }
+
+  function latitudeToTileY(latitude, zoom){
+    const n = 2 ** zoom;
+    const lat = Math.max(-WEB_MERCATOR_MAX_LAT, Math.min(WEB_MERCATOR_MAX_LAT, latitude));
+    const radians = d2r(lat);
+    const normalized = (1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2;
+    return Math.min(n - 1, Math.max(0, Math.floor(normalized * n)));
+  }
+
+  function tileXToLongitude(x, zoom){
+    return x / (2 ** zoom) * 360 - 180;
+  }
+
+  function tileYToLatitude(y, zoom){
+    return r2d(Math.atan(Math.sinh(Math.PI * (1 - 2 * y / (2 ** zoom)))));
+  }
+
+  function expandTileUrl(template, z, x, y){
+    return template
+      .replaceAll('{z}', String(z))
+      .replaceAll('{x}', String(x))
+      .replaceAll('{y}', String(y));
+  }
+
+  function makeClosedFootprint(center, heading, halfAngle, innerDistance, outerDistance){
+    const points = makeSector(center, heading, halfAngle, innerDistance, outerDistance, 48);
+    const ring = points.map(point => [point.lng, point.lat]);
+    if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
+      ring.push([...ring[0]]);
+    }
+    return ring;
+  }
+
+  function buildTileManifest(ring, source, zoom, padding){
+    const points = ring.slice(0, -1);
+    const projected = points.map(([longitude, latitude]) => ({
+      x: longitudeToTileX(longitude, zoom),
+      y: latitudeToTileY(latitude, zoom)
+    }));
+    const n = 2 ** zoom;
+    const minX = Math.max(0, Math.min(...projected.map(point => point.x)) - padding);
+    const maxX = Math.min(n - 1, Math.max(...projected.map(point => point.x)) + padding);
+    const minY = Math.max(0, Math.min(...projected.map(point => point.y)) - padding);
+    const maxY = Math.min(n - 1, Math.max(...projected.map(point => point.y)) + padding);
+    const tiles = [];
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        tiles.push({
+          z: zoom,
+          x,
+          y,
+          url: expandTileUrl(source.urlTemplate, zoom, x, y),
+          bounds: {
+            west: tileXToLongitude(x, zoom),
+            south: tileYToLatitude(y + 1, zoom),
+            east: tileXToLongitude(x + 1, zoom),
+            north: tileYToLatitude(y, zoom)
+          }
+        });
+      }
+    }
+
+    return tiles;
+  }
+
+  function buildCameraScene(){
+    const input = validateCameraSceneInputs();
+    const {lat, lng, sw, sh, rw, rh, focal, camHeight, targetHeight, heading, tilt, zoom, source, c} = input;
+    const maximumRayDistanceM = Math.min(c.horizonKm * 1000, MAXIMUM_RAY_DISTANCE_M);
+    const nearAngleDeg = tilt + c.vfov / 2;
+    const farAngleDeg = tilt - c.vfov / 2;
+    const nearDistanceM = nearAngleDeg > 0 ? camHeight / Math.tan(d2r(nearAngleDeg)) : 0;
+    const farDistanceM = farAngleDeg > 0 ? camHeight / Math.tan(d2r(farAngleDeg)) : maximumRayDistanceM;
+    const envelopeNearM = Math.max(0, nearDistanceM);
+    const envelopeFarM = Math.min(maximumRayDistanceM, farDistanceM);
+
+    if (!(maximumRayDistanceM > 0) || nearAngleDeg <= 0 || !(envelopeFarM > envelopeNearM)) {
+      return {
+        schemaVersion: CAMERA_SCENE_SCHEMA,
+        exportedAt: new Date().toISOString(),
+        application: {name: 'port-cam-plan', version: '0.7.2', exportType: 'camera-scene'},
+        camera: {
+          position: {latitudeDeg: lat, longitudeDeg: lng, heightM: camHeight, heightReference: 'intersection-plane'},
+          orientation: {headingDeg: normalizeHeading(heading), tiltDownDeg: tilt, rollDeg: 0}
+        },
+        image: {widthPx: rw, heightPx: rh, principalPointPx: {x: rw / 2, y: rh / 2}, pixelCenterConvention: 'half-pixel'},
+        optics: {
+          sensorWidthMm: sw,
+          sensorHeightMm: sh,
+          focalLengthMm: focal,
+          pixelPitchMm: c.pitchMm,
+          horizontalFovDeg: c.hfov,
+          verticalFovDeg: c.vfov,
+          distortionModel: 'none'
+        },
+        coordinateSystem: {
+          horizontalCrs: 'EPSG:4326',
+          earthModel: 'WGS84',
+          imageOrigin: 'top-left',
+          headingConvention: 'clockwise-from-true-north',
+          tiltConvention: 'positive-down-from-horizontal',
+          cameraFrame: {right: '+X', down: '+Y', forward: '+Z'}
+        },
+        intersectionSurface: {type: 'horizontal-plane', elevationM: 0, elevationReference: 'local-planning-datum'},
+        tileSource: {...source},
+        tileSelection: {
+          method: 'conservative-fov-envelope',
+          zoom,
+          paddingTiles: TILE_PADDING,
+          maximumRayDistanceM: MAXIMUM_RAY_DISTANCE_M,
+          footprintStatus: 'no-ground-intersection',
+          footprint: null,
+          tiles: []
+        },
+        derivedPlanningValues: {
+          horizonDistanceM: c.horizonKm * 1000,
+          vfovNearDistanceM: Number.isFinite(c.nearR) ? c.nearR : null,
+          vfovFarDistanceM: Number.isFinite(c.farR) ? c.farR : null,
+          envelopeNearDistanceM: null,
+          envelopeFarDistanceM: null,
+          horizontalEnvelopeHalfAngleDeg: c.hfov / 2,
+          targetHeightM: targetHeight
+        },
+        assumptions: [
+          'The intersection surface is a horizontal plane at local planning datum elevation 0 m.',
+          'Camera height is relative to the intersection plane and is not true altitude.',
+          'The vertical FOV has no valid ground intersection for the current tilt and height.',
+          'Roll is fixed at 0 degrees; lens distortion is not modeled; the principal point is the image center.'
+        ]
+      };
+    }
+
+    const footprintStatus = farAngleDeg <= 0 || farDistanceM > c.horizonKm * 1000
+      ? 'horizon-clipped'
+      : 'finite';
+    const footprintRing = makeClosedFootprint(cameraLatLng, heading, c.hfov / 2, envelopeNearM, envelopeFarM);
+    const tiles = buildTileManifest(footprintRing, source, zoom, TILE_PADDING);
+
+    return {
+      schemaVersion: CAMERA_SCENE_SCHEMA,
+      exportedAt: new Date().toISOString(),
+      application: {name: 'port-cam-plan', version: '0.7.2', exportType: 'camera-scene'},
+      camera: {
+        position: {latitudeDeg: lat, longitudeDeg: lng, heightM: camHeight, heightReference: 'intersection-plane'},
+        orientation: {headingDeg: normalizeHeading(heading), tiltDownDeg: tilt, rollDeg: 0}
+      },
+      image: {widthPx: rw, heightPx: rh, principalPointPx: {x: rw / 2, y: rh / 2}, pixelCenterConvention: 'half-pixel'},
+      optics: {
+        sensorWidthMm: sw,
+        sensorHeightMm: sh,
+        focalLengthMm: focal,
+        pixelPitchMm: c.pitchMm,
+        horizontalFovDeg: c.hfov,
+        verticalFovDeg: c.vfov,
+        distortionModel: 'none'
+      },
+      coordinateSystem: {
+        horizontalCrs: 'EPSG:4326',
+        earthModel: 'WGS84',
+        imageOrigin: 'top-left',
+        headingConvention: 'clockwise-from-true-north',
+        tiltConvention: 'positive-down-from-horizontal',
+        cameraFrame: {right: '+X', down: '+Y', forward: '+Z'}
+      },
+      intersectionSurface: {type: 'horizontal-plane', elevationM: 0, elevationReference: 'local-planning-datum'},
+      tileSource: {...source},
+      tileSelection: {
+        method: 'conservative-fov-envelope',
+        zoom,
+        paddingTiles: TILE_PADDING,
+        maximumRayDistanceM: MAXIMUM_RAY_DISTANCE_M,
+        footprintStatus,
+        footprint: {type: 'Polygon', coordinates: [footprintRing]},
+        tiles
+      },
+      derivedPlanningValues: {
+        horizonDistanceM: c.horizonKm * 1000,
+        vfovNearDistanceM: Number.isFinite(c.nearR) ? c.nearR : null,
+        vfovFarDistanceM: Number.isFinite(c.farR) ? c.farR : null,
+        envelopeNearDistanceM: envelopeNearM,
+        envelopeFarDistanceM: envelopeFarM,
+        horizontalEnvelopeHalfAngleDeg: c.hfov / 2,
+        targetHeightM: targetHeight
+      },
+      assumptions: [
+        'The intersection surface is a horizontal plane at local planning datum elevation 0 m.',
+        'Camera height is relative to the intersection plane and is not true altitude.',
+        'The footprint is a conservative near/far FOV envelope, not per-pixel ray-casting truth.',
+        'The envelope is limited by the lesser of the existing horizon-distance model and 30 km.',
+        'Rays above the horizon are clipped at the horizon distance.',
+        'Roll is fixed at 0 degrees; lens distortion is not modeled; the principal point is the image center; pixel centers use pixel + 0.5.',
+        'The tile manifest includes one tile of padding and is a conservative download range, not a geometric ground-truth result.'
+      ]
+    };
+  }
+
+  function serializeCameraScene(){
+    return JSON.stringify(buildCameraScene(), null, 2);
+  }
+
+  function localTimestamp(date = new Date()){
+    const pad = value => String(value).padStart(2, '0');
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  }
+
+  function handleExportError(error){
+    setExportState('匯出失敗。', error.message || String(error));
+  }
+
+  document.getElementById('downloadCameraScene').addEventListener('click', () => {
+    try {
+      const json = serializeCameraScene();
+      const blobUrl = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `camera-scene-${localTimestamp()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+      setExportState(`已下載 camera-scene-${localTimestamp()}.json。`);
+    } catch (error) {
+      handleExportError(error);
+    }
+  });
+
+  document.getElementById('copyCameraScene').addEventListener('click', async () => {
+    try {
+      const json = serializeCameraScene();
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(json);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = json;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        if (!document.execCommand('copy')) throw new Error('瀏覽器不允許存取剪貼簿。');
+        textarea.remove();
+      }
+      setExportState('Camera Scene JSON 已複製。');
+    } catch (error) {
+      handleExportError(error);
+    }
+  });
+
+  window.cameraSceneExportForTest = {buildCameraScene, serializeCameraScene};
 
   function updateAll(){
     updateSummary();

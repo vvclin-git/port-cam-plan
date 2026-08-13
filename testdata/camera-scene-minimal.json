@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "camera-scene/1.1",
+  "exportedAt": "2026-08-13T00:00:00.000Z",
+  "application": {"name": "port-cam-plan", "version": "0.7.2", "exportType": "camera-scene"},
+  "camera": {
+    "position": {"latitudeDeg": 22.6082, "longitudeDeg": 120.2824, "heightM": 10, "heightReference": "intersection-plane"},
+    "orientation": {"headingDeg": 0, "tiltDownDeg": 45, "rollDeg": 0}
+  },
+  "image": {"widthPx": 4, "heightPx": 2, "principalPointPx": {"x": 2, "y": 1}, "pixelCenterConvention": "half-pixel"},
+  "optics": {
+    "sensorWidthMm": 10,
+    "sensorHeightMm": 5,
+    "focalLengthMm": 10,
+    "pixelPitchMm": 2.5,
+    "horizontalFovDeg": 53.1301023542,
+    "verticalFovDeg": 28.0724869359,
+    "distortionModel": "none"
+  },
+  "coordinateSystem": {
+    "horizontalCrs": "EPSG:4326",
+    "earthModel": "WGS84",
+    "imageOrigin": "top-left",
+    "headingConvention": "clockwise-from-true-north",
+    "tiltConvention": "positive-down-from-horizontal",
+    "cameraFrame": {"right": "+X", "down": "+Y", "forward": "+Z"}
+  },
+  "intersectionSurface": {"type": "horizontal-plane", "elevationM": 0, "elevationReference": "local-planning-datum"},
+  "tileSource": {
+    "id": "test-source",
+    "name": "Test source",
+    "type": "xyz",
+    "urlTemplate": "https://example.invalid/{z}/{x}/{y}.png",
+    "crs": "EPSG:3857",
+    "tileSizePx": 256,
+    "minZoom": 0,
+    "maxZoom": 19,
+    "urlCoordinateOrder": "z-x-y",
+    "networkRequired": true,
+    "attribution": "test"
+  },
+  "tileSelection": {
+    "method": "conservative-fov-envelope",
+    "zoom": 1,
+    "paddingTiles": 1,
+    "maximumRayDistanceM": 30000,
+    "footprintStatus": "finite",
+    "footprint": {"type": "Polygon", "coordinates": [[[120.27, 22.60], [120.30, 22.60], [120.30, 22.62], [120.27, 22.62], [120.27, 22.60]]]},
+    "tiles": [{"z": 1, "x": 1, "y": 0, "url": "https://example.invalid/1/1/0.png", "bounds": {"west": 0, "south": 0, "east": 180, "north": 85}}]
+  },
+  "derivedPlanningValues": {"horizonDistanceM": 30000, "vfovNearDistanceM": 20, "vfovFarDistanceM": 100, "envelopeNearDistanceM": 20, "envelopeFarDistanceM": 100, "horizontalEnvelopeHalfAngleDeg": 26.5, "targetHeightM": 1.7},
+  "assumptions": []
+}
