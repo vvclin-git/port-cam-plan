@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import colorsys
 import copy
+import hashlib
 import json
 import math
 import os
@@ -47,6 +48,7 @@ DEFAULT_GRID = (160, 90)
 DEFAULT_NEIGHBORHOOD = 3
 DEFAULT_TOLERANCE = 20.0
 DEFAULT_OVERLAY_OPACITY = 0.65
+HARD_MAXIMUM_RAY_DISTANCE_M = 30_000.0
 
 STATUS_COLORS = {
     "no-intersection": (135, 206, 235),       # sky blue
@@ -443,7 +445,13 @@ def build_geometry_results(scene: dict[str, Any], grid: tuple[int, int], progres
     camera_latitude = float(camera_position["latitudeDeg"])
     camera_longitude = float(camera_position["longitudeDeg"])
     camera_height = float(camera_position["heightM"])
-    maximum_distance = float(scene.get("tileSelection", {}).get("maximumRayDistanceM", 30_000.0))
+    selection = scene.get("tileSelection", {})
+    horizon_distance = float(scene.get("derivedPlanningValues", {}).get("horizonDistanceM", HARD_MAXIMUM_RAY_DISTANCE_M))
+    maximum_distance = min(
+        float(selection.get("maximumRayDistanceM", HARD_MAXIMUM_RAY_DISTANCE_M)),
+        horizon_distance,
+        float(selection.get("hardMaximumRayDistanceM", HARD_MAXIMUM_RAY_DISTANCE_M)),
+    )
     zoom = int(scene["tileSelection"]["zoom"])
     results: list[dict[str, Any]] = []
     total = width * height
@@ -490,15 +498,31 @@ class TileKey:
     y: int
 
 
+def tile_source_hash(tile_source: dict[str, Any]) -> str:
+    """Return a stable cache namespace for one tile source contract."""
+    identity = {
+        "id": tile_source.get("id"),
+        "urlTemplate": tile_source.get("urlTemplate"),
+        "layer": tile_source.get("layer", tile_source.get("id")),
+        "style": tile_source.get("style", ""),
+        "matrixSet": tile_source.get("matrixSet", tile_source.get("tileMatrixSet", "")),
+        "tileSizePx": tile_source.get("tileSizePx", 256),
+    }
+    payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 class TileCache:
-    def __init__(self, cache_path: Path):
+    def __init__(self, cache_path: Path, tile_source: Optional[dict[str, Any]] = None):
         require_pillow()
         self.cache_path = cache_path
+        self.tile_source = tile_source or {}
+        self.source_hash = tile_source_hash(self.tile_source)
         self.images: dict[TileKey, Any] = {}
         self._lock = threading.Lock()
 
     def path_for(self, key: TileKey) -> Path:
-        return self.cache_path / str(key.z) / str(key.x) / f"{key.y}.png"
+        return self.cache_path / self.source_hash / str(key.z) / str(key.x) / f"{key.y}.png"
 
     def _decode(self, payload: bytes) -> Any:
         require_pillow()
@@ -978,7 +1002,7 @@ def run_pipeline(
     progress: Optional[Callable[[str, int, int], None]] = None,
 ) -> list[dict[str, Any]]:
     results = build_geometry_results(scene, grid, progress)
-    cache = TileCache(cache_path)
+    cache = TileCache(cache_path, scene["tileSource"])
     sample_geometry_results(scene, results, cache, allow_download, config.sample_neighborhood, progress)
     classify_results(results, config)
     return results

@@ -22,7 +22,10 @@ python ray_cast_test.py camera-scene.json `
   --color-profile water-profile.json
 ```
 
-The first run stores only decoded-source tile files under `.tile-cache`.
+The first run stores only decoded-source tile files under
+`.tile-cache/<tile-source-hash>/<z>/<x>/<y>.png`. The hash isolates Source ID,
+URL template, layer/style, matrix set, and tile size. Existing unscoped
+`.tile-cache/<z>/<x>/<y>.png` files are retained but are not read.
 Profiles and output files never contain tile images, cookies, tokens, or
 credentials. Use `--offline` to prohibit all network downloads.
 
@@ -53,6 +56,11 @@ Each result keeps these layers separate:
 Missing tiles, manifest misses, decode errors, no intersection, and rays beyond
 the maximum distance remain `unknown` with a reason. They are not converted to
 `non-water`.
+
+The Scene contract sets `tileSelection.maximumRayDistanceM` to
+`min(horizonDistanceM, 30000)` and keeps `hardMaximumRayDistanceM: 30000` as
+the hard ceiling. A ray beyond the effective distance is `max-distance`, not a
+manifest miss.
 
 The raw preview uses nearest-neighbour pixels. Status colours are sky blue for
 no intersection, red for unavailable/decode failure, yellow for a manifest

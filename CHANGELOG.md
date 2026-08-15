@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 0 — 2026-08-15
+
+- Extracted DOM／Leaflet-free `PortCamCore` calculation and schema helpers with Node golden tests for optics, spherical envelope, observations, angle conventions, project/scene contracts, and preview/commit semantics.
+- Locked `tiltDownDeg`, `heightReference: "intersection-plane"`, `camera-project/1.0`, `camera-scene/1.1`, and effective ray distance `min(horizonDistanceM, 30000)`.
+- Isolated Python tile cache entries by source hash and retained legacy unscoped cache files without reading them.
+- Added [`docs/PHASE_0_HANDOFF.md`](docs/PHASE_0_HANDOFF.md) as the verified handoff record.
+
 ## v0.8.1 — 2026-08-14
 
 - 將 App 正式入口由 `harbor_ai_camera_planner_v06.html` 改為 `index.html`。

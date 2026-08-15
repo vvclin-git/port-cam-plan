@@ -114,6 +114,25 @@ CLI、profile schema、輸出檔案與驗收邊界見
 [`docs/RAY_CAST_WATER_COLOR.md`](./docs/RAY_CAST_WATER_COLOR.md)。此工具只供快速驗證，
 不取代 GeoJSON、語意分割或人工檢查。
 
+## Phase 0 計算契約與測試
+
+[`portcam-core.js`](./portcam-core.js) 是不依賴 DOM／Leaflet 的純計算核心，頁面 adapter 與 Node golden tests 共用它。正式計算模型為 `spherical-v1`；`tiltDownDeg` 正值向下，Camera height 使用 `heightReference: "intersection-plane"`，Scene 另記錄 `intersectionPlaneElevationM` 與 `verticalDatum: "local-planning-datum"`。
+
+- Project schema 是 `camera-project/1.0`；Observation 預設是 derived runtime cache，不是必要持久資料。
+- Camera Scene export 維持 `camera-scene/1.1` 與 top-level `camera`，不改為 `cameras[]`。
+- Tile selection 的有效距離是 `min(horizonDistanceM, 30000)`，並保留 `hardMaximumRayDistanceM: 30000`。
+- Ray-casting cache 使用 `.tile-cache/<tile-source-hash>/<z>/<x>/<y>.png`；舊的無來源路徑不會被讀取。
+
+Phase 0 回歸命令：
+
+```powershell
+node --test test_portcam_core.js
+python -m unittest -v test_ray_cast_test.py
+node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const a=h.indexOf('<script>',h.indexOf('leaflet.js'));const b=h.indexOf('</script>',a);new Function(h.slice(a+8,b));console.log('inline script syntax ok')"
+```
+
+完整交接與實際驗證結果見 [`docs/PHASE_0_HANDOFF.md`](./docs/PHASE_0_HANDOFF.md)。
+
 ## 驗證
 
 可先執行靜態檢查：

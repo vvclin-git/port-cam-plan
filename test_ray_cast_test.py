@@ -70,9 +70,10 @@ class ProfileAndRenderTests(unittest.TestCase):
     def test_cached_tile_produces_sample_colour(self):
         scene = ray.load_scene(Path("testdata/camera-scene-minimal.json"))
         with tempfile.TemporaryDirectory() as directory:
-            tile_path = Path(directory) / "1" / "1"
-            tile_path.mkdir(parents=True)
-            Image.new("RGB", (256, 256), (65, 128, 164)).save(tile_path / "0.png")
+            cache = ray.TileCache(Path(directory), scene["tileSource"])
+            tile_path = cache.path_for(ray.TileKey(1, 1, 0))
+            tile_path.parent.mkdir(parents=True)
+            Image.new("RGB", (256, 256), (65, 128, 164)).save(tile_path)
             results = ray.run_pipeline(
                 scene,
                 (4, 2),
@@ -113,6 +114,53 @@ class ProfileAndRenderTests(unittest.TestCase):
         self.assertEqual(json.dumps(results[0]["geometry"], sort_keys=True), geometry_before)
         self.assertEqual(json.dumps(results[0]["sample"], sort_keys=True), sample_before)
         self.assertEqual(results[0]["classification"]["class"], "non-water")
+
+
+class TileCacheContractTests(unittest.TestCase):
+    def test_phase_zero_scene_fields_remain_python_compatible(self):
+        scene = ray.load_scene(Path("testdata/camera-scene-core-golden.json"))
+        self.assertEqual(scene["schemaVersion"], "camera-scene/1.1")
+        self.assertEqual(scene["camera"]["position"]["heightReference"], "intersection-plane")
+        self.assertEqual(scene["camera"]["position"]["verticalDatum"], "local-planning-datum")
+        self.assertEqual(scene["tileSelection"]["hardMaximumRayDistanceM"], 30_000)
+
+    def test_source_identity_isolated_by_hash(self):
+        base = {
+            "id": "osm",
+            "urlTemplate": "https://tile.example/{z}/{x}/{y}.png",
+            "layer": "base",
+            "style": "default",
+            "matrixSet": "GoogleMapsCompatible",
+            "tileSizePx": 256,
+        }
+        changed = {**base, "style": "photo"}
+        self.assertNotEqual(ray.tile_source_hash(base), ray.tile_source_hash(changed))
+        self.assertNotEqual(
+            ray.tile_source_hash(base),
+            ray.tile_source_hash({**base, "urlTemplate": "https://other/{z}/{x}/{y}.png"}),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            first = ray.TileCache(Path(directory), base).path_for(ray.TileKey(18, 123, 456))
+            second = ray.TileCache(Path(directory), changed).path_for(ray.TileKey(18, 123, 456))
+        self.assertNotEqual(first, second)
+
+    def test_legacy_unscoped_cache_is_not_read(self):
+        scene = ray.load_scene(Path("testdata/camera-scene-minimal.json"))
+        with tempfile.TemporaryDirectory() as directory:
+            legacy = Path(directory) / "1" / "1"
+            legacy.mkdir(parents=True)
+            Image.new("RGB", (256, 256), (65, 128, 164)).save(legacy / "0.png")
+            cache = ray.TileCache(Path(directory), scene["tileSource"])
+            image, status = cache.get({"z": 1, "x": 1, "y": 0, "url": ""}, allow_download=False)
+        self.assertIsNone(image)
+        self.assertEqual(status, "tile-unavailable")
+
+    def test_effective_ray_distance_uses_horizon_before_manifest_sampling(self):
+        scene = ray.load_scene(Path("testdata/camera-scene-minimal.json"))
+        scene["derivedPlanningValues"]["horizonDistanceM"] = 5
+        scene["tileSelection"]["maximumRayDistanceM"] = 30_000
+        results = ray.build_geometry_results(scene, (1, 1))
+        self.assertEqual(results[0]["geometry"]["status"], "max-distance")
 
 
 if __name__ == "__main__":

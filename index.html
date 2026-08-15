@@ -224,7 +224,7 @@
         <input id="heading" type="number" min="0" max="359.9" step="0.1" value="90">
       </div>
       <div>
-        <label for="tilt">俯角 (°)</label>
+        <label for="tilt">向下俯角 Tilt (°)</label>
         <input id="tilt" type="number" step="0.1" value="2">
       </div>
     </div>
@@ -285,7 +285,7 @@
       <div class="metric"><span>Pixel pitch</span><b id="pixelPitch">—</b></div>
       <div class="metric"><span>HFOV</span><b id="hfov">—</b></div>
       <div class="metric"><span>VFOV</span><b id="vfov">—</b></div>
-      <div class="metric"><span>Horizon limit</span><b id="horizon">—</b></div>
+      <div class="metric"><span>Horizon distance</span><b id="horizon">—</b></div>
       <div class="metric"><span>VFOV near</span><b id="nearR">—</b></div>
       <div class="metric"><span>VFOV far</span><b id="farR">—</b></div>
     </div>
@@ -335,9 +335,11 @@
   </main>
 </div>
 
+<script src="./portcam-core.js"></script>
 <script src="./leaflet/leaflet.js"></script>
 <script>
 (() => {
+  const Core = window.PortCamCore;
   // Standard optical-format approximations for a 16:9 active image.
   // Exact active dimensions vary by sensor model/vendor.
   const SENSOR_PRESETS = {
@@ -790,68 +792,46 @@
     updateTargetResult(e.latlng);
   });
 
-  function d2r(d){ return d * Math.PI / 180; }
-  function r2d(r){ return r * 180 / Math.PI; }
-
   function destinationPoint(latlng, bearingDeg, distanceM) {
-    const R = 6371000;
-    const br = d2r(bearingDeg);
-    const lat1 = d2r(latlng.lat);
-    const lon1 = d2r(latlng.lng);
-    const dr = distanceM / R;
-
-    const lat2 = Math.asin(
-      Math.sin(lat1)*Math.cos(dr) +
-      Math.cos(lat1)*Math.sin(dr)*Math.cos(br)
-    );
-    const lon2 = lon1 + Math.atan2(
-      Math.sin(br)*Math.sin(dr)*Math.cos(lat1),
-      Math.cos(dr)-Math.sin(lat1)*Math.sin(lat2)
-    );
-    return L.latLng(r2d(lat2), r2d(lon2));
+    const point = Core.destinationPoint(latlng, bearingDeg, distanceM);
+    return L.latLng(point.lat, point.lng);
   }
 
   function bearingBetween(a,b){
-    const lat1=d2r(a.lat), lat2=d2r(b.lat);
-    const dLon=d2r(b.lng-a.lng);
-    const y=Math.sin(dLon)*Math.cos(lat2);
-    const x=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
-    return (r2d(Math.atan2(y,x))+360)%360;
+    return Core.bearingBetween(a,b);
   }
 
   function angleDiff(a,b){
-    return Math.abs(((a-b+540)%360)-180);
+    return Core.angleDifference(a,b);
   }
 
   function val(id){ return parseFloat(document.getElementById(id).value); }
 
   function compute(){
-    const sw = val('sensorW');
-    const sh = val('sensorH');
-    const rw = val('resW');
-    const focal = val('focal');
-    const camHeight = val('camHeight');
-    const targetHeight = val('targetHeight');
-    const tilt = val('tilt');
-
-    const pitchMm = sw / rw;
-    const hfov = 2 * r2d(Math.atan(sw / (2*focal)));
-    const vfov = 2 * r2d(Math.atan(sh / (2*focal)));
-    const horizonKm = 3.57 * (
-      Math.sqrt(Math.max(0,camHeight)) +
-      Math.sqrt(Math.max(0,targetHeight))
-    );
-
-    const nearAng = tilt + vfov/2;
-    const farAng = tilt - vfov/2;
-    const nearR = nearAng > 0 ? camHeight / Math.tan(d2r(nearAng)) : Infinity;
-    const farR = farAng > 0 ? camHeight / Math.tan(d2r(farAng)) : Infinity;
-
-    return {pitchMm,hfov,vfov,horizonKm,nearR,farR};
+    const camera = {
+      sensorWidthMm: val('sensorW'),
+      sensorHeightMm: val('sensorH'),
+      widthPx: val('resW'),
+      heightPx: val('resH'),
+      focalLengthMm: val('focal'),
+      heightM: val('camHeight'),
+      tiltDownDeg: val('tilt')
+    };
+    const optics = Core.computeOptics(camera);
+    const horizon = Core.computePlanningHorizon(camera.heightM, val('targetHeight'));
+    const envelope = Core.computeGroundEnvelope(camera, optics, {horizonDistanceM: horizon.distanceM});
+    return {
+      pitchMm: optics.pixelPitchMm,
+      hfov: optics.horizontalFovDeg,
+      vfov: optics.verticalFovDeg,
+      horizonKm: horizon.distanceKm,
+      nearR: envelope.nearDistanceM === null ? Infinity : envelope.nearDistanceM,
+      farR: envelope.farDistanceM === null ? Infinity : envelope.farDistanceM
+    };
   }
 
   function rangeForPixels(targetM, focalMm, pitchMm, nPx){
-    return (targetM * focalMm) / (nPx * pitchMm);
+    return Core.rangeForPixels(targetM, focalMm, pitchMm, nPx);
   }
 
   function makeSector(center, heading, halfAngle, innerM, outerM, steps=48){
@@ -1041,16 +1021,9 @@
     `;
   }
 
-  const CAMERA_SCENE_SCHEMA = 'camera-scene/1.1';
   const TILE_PADDING = 1;
-  const MAXIMUM_RAY_DISTANCE_M = 30000;
-  const WEB_MERCATOR_MAX_LAT = 85.0511287798;
   const exportStateEl = document.getElementById('exportState');
   const exportErrorEl = document.getElementById('exportError');
-
-  function normalizeHeading(degrees){
-    return ((degrees % 360) + 360) % 360;
-  }
 
   function isFinitePositive(value){
     return Number.isFinite(value) && value > 0;
@@ -1100,206 +1073,27 @@
     return {lat, lng, sw, sh, rw, rh, focal, camHeight, targetHeight, heading, tilt, zoom, source, c};
   }
 
-  function longitudeToTileX(longitude, zoom){
-    const n = 2 ** zoom;
-    const wrapped = ((longitude + 180) % 360 + 360) % 360;
-    return Math.min(n - 1, Math.max(0, Math.floor(wrapped / 360 * n)));
-  }
-
-  function latitudeToTileY(latitude, zoom){
-    const n = 2 ** zoom;
-    const lat = Math.max(-WEB_MERCATOR_MAX_LAT, Math.min(WEB_MERCATOR_MAX_LAT, latitude));
-    const radians = d2r(lat);
-    const normalized = (1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2;
-    return Math.min(n - 1, Math.max(0, Math.floor(normalized * n)));
-  }
-
-  function tileXToLongitude(x, zoom){
-    return x / (2 ** zoom) * 360 - 180;
-  }
-
-  function tileYToLatitude(y, zoom){
-    return r2d(Math.atan(Math.sinh(Math.PI * (1 - 2 * y / (2 ** zoom)))));
-  }
-
-  function expandTileUrl(template, z, x, y){
-    return template
-      .replaceAll('{z}', String(z))
-      .replaceAll('{x}', String(x))
-      .replaceAll('{y}', String(y));
-  }
-
-  function makeClosedFootprint(center, heading, halfAngle, innerDistance, outerDistance){
-    const points = makeSector(center, heading, halfAngle, innerDistance, outerDistance, 48);
-    const ring = points.map(point => [point.lng, point.lat]);
-    if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
-      ring.push([...ring[0]]);
-    }
-    return ring;
-  }
-
-  function buildTileManifest(ring, source, zoom, padding){
-    const points = ring.slice(0, -1);
-    const projected = points.map(([longitude, latitude]) => ({
-      x: longitudeToTileX(longitude, zoom),
-      y: latitudeToTileY(latitude, zoom)
-    }));
-    const n = 2 ** zoom;
-    const minX = Math.max(0, Math.min(...projected.map(point => point.x)) - padding);
-    const maxX = Math.min(n - 1, Math.max(...projected.map(point => point.x)) + padding);
-    const minY = Math.max(0, Math.min(...projected.map(point => point.y)) - padding);
-    const maxY = Math.min(n - 1, Math.max(...projected.map(point => point.y)) + padding);
-    const tiles = [];
-
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        tiles.push({
-          z: zoom,
-          x,
-          y,
-          url: expandTileUrl(source.urlTemplate, zoom, x, y),
-          bounds: {
-            west: tileXToLongitude(x, zoom),
-            south: tileYToLatitude(y + 1, zoom),
-            east: tileXToLongitude(x + 1, zoom),
-            north: tileYToLatitude(y, zoom)
-          }
-        });
-      }
-    }
-
-    return tiles;
-  }
-
   function buildCameraScene(){
     const input = validateCameraSceneInputs();
-    const {lat, lng, sw, sh, rw, rh, focal, camHeight, targetHeight, heading, tilt, zoom, source, c} = input;
-    const maximumRayDistanceM = Math.min(c.horizonKm * 1000, MAXIMUM_RAY_DISTANCE_M);
-    const nearAngleDeg = tilt + c.vfov / 2;
-    const farAngleDeg = tilt - c.vfov / 2;
-    const nearDistanceM = nearAngleDeg > 0 ? camHeight / Math.tan(d2r(nearAngleDeg)) : 0;
-    const farDistanceM = farAngleDeg > 0 ? camHeight / Math.tan(d2r(farAngleDeg)) : maximumRayDistanceM;
-    const envelopeNearM = Math.max(0, nearDistanceM);
-    const envelopeFarM = Math.min(maximumRayDistanceM, farDistanceM);
-
-    if (!(maximumRayDistanceM > 0) || nearAngleDeg <= 0 || !(envelopeFarM > envelopeNearM)) {
-      return {
-        schemaVersion: CAMERA_SCENE_SCHEMA,
-        exportedAt: new Date().toISOString(),
-        application: {name: 'port-cam-plan', version: '0.7.2', exportType: 'camera-scene'},
-        camera: {
-          position: {latitudeDeg: lat, longitudeDeg: lng, heightM: camHeight, heightReference: 'intersection-plane'},
-          orientation: {headingDeg: normalizeHeading(heading), tiltDownDeg: tilt, rollDeg: 0}
-        },
-        image: {widthPx: rw, heightPx: rh, principalPointPx: {x: rw / 2, y: rh / 2}, pixelCenterConvention: 'half-pixel'},
-        optics: {
-          sensorWidthMm: sw,
-          sensorHeightMm: sh,
-          focalLengthMm: focal,
-          pixelPitchMm: c.pitchMm,
-          horizontalFovDeg: c.hfov,
-          verticalFovDeg: c.vfov,
-          distortionModel: 'none'
-        },
-        coordinateSystem: {
-          horizontalCrs: 'EPSG:4326',
-          earthModel: 'WGS84',
-          imageOrigin: 'top-left',
-          headingConvention: 'clockwise-from-true-north',
-          tiltConvention: 'positive-down-from-horizontal',
-          cameraFrame: {right: '+X', down: '+Y', forward: '+Z'}
-        },
-        intersectionSurface: {type: 'horizontal-plane', elevationM: 0, elevationReference: 'local-planning-datum'},
-        tileSource: {...source},
-        tileSelection: {
-          method: 'conservative-fov-envelope',
-          zoom,
-          paddingTiles: TILE_PADDING,
-          maximumRayDistanceM: MAXIMUM_RAY_DISTANCE_M,
-          footprintStatus: 'no-ground-intersection',
-          footprint: null,
-          tiles: []
-        },
-        derivedPlanningValues: {
-          horizonDistanceM: c.horizonKm * 1000,
-          vfovNearDistanceM: Number.isFinite(c.nearR) ? c.nearR : null,
-          vfovFarDistanceM: Number.isFinite(c.farR) ? c.farR : null,
-          envelopeNearDistanceM: null,
-          envelopeFarDistanceM: null,
-          horizontalEnvelopeHalfAngleDeg: c.hfov / 2,
-          targetHeightM: targetHeight
-        },
-        assumptions: [
-          'The intersection surface is a horizontal plane at local planning datum elevation 0 m.',
-          'Camera height is relative to the intersection plane and is not true altitude.',
-          'The vertical FOV has no valid ground intersection for the current tilt and height.',
-          'Roll is fixed at 0 degrees; lens distortion is not modeled; the principal point is the image center.'
-        ]
-      };
-    }
-
-    const footprintStatus = farAngleDeg <= 0 || farDistanceM > c.horizonKm * 1000
-      ? 'horizon-clipped'
-      : 'finite';
-    const footprintRing = makeClosedFootprint(cameraLatLng, heading, c.hfov / 2, envelopeNearM, envelopeFarM);
-    const tiles = buildTileManifest(footprintRing, source, zoom, TILE_PADDING);
-
-    return {
-      schemaVersion: CAMERA_SCENE_SCHEMA,
-      exportedAt: new Date().toISOString(),
-      application: {name: 'port-cam-plan', version: '0.7.2', exportType: 'camera-scene'},
-      camera: {
-        position: {latitudeDeg: lat, longitudeDeg: lng, heightM: camHeight, heightReference: 'intersection-plane'},
-        orientation: {headingDeg: normalizeHeading(heading), tiltDownDeg: tilt, rollDeg: 0}
+    return Core.buildCameraScene(
+      {
+        position: {latitudeDeg: input.lat, longitudeDeg: input.lng},
+        heightM: input.camHeight,
+        headingDeg: input.heading,
+        tiltDownDeg: input.tilt,
+        sensorWidthMm: input.sw,
+        sensorHeightMm: input.sh,
+        widthPx: input.rw,
+        heightPx: input.rh,
+        focalLengthMm: input.focal
       },
-      image: {widthPx: rw, heightPx: rh, principalPointPx: {x: rw / 2, y: rh / 2}, pixelCenterConvention: 'half-pixel'},
-      optics: {
-        sensorWidthMm: sw,
-        sensorHeightMm: sh,
-        focalLengthMm: focal,
-        pixelPitchMm: c.pitchMm,
-        horizontalFovDeg: c.hfov,
-        verticalFovDeg: c.vfov,
-        distortionModel: 'none'
+      {
+        planningTargetHeightM: input.targetHeight,
+        tileZoom: input.zoom,
+        tilePadding: TILE_PADDING
       },
-      coordinateSystem: {
-        horizontalCrs: 'EPSG:4326',
-        earthModel: 'WGS84',
-        imageOrigin: 'top-left',
-        headingConvention: 'clockwise-from-true-north',
-        tiltConvention: 'positive-down-from-horizontal',
-        cameraFrame: {right: '+X', down: '+Y', forward: '+Z'}
-      },
-      intersectionSurface: {type: 'horizontal-plane', elevationM: 0, elevationReference: 'local-planning-datum'},
-      tileSource: {...source},
-      tileSelection: {
-        method: 'conservative-fov-envelope',
-        zoom,
-        paddingTiles: TILE_PADDING,
-        maximumRayDistanceM: MAXIMUM_RAY_DISTANCE_M,
-        footprintStatus,
-        footprint: {type: 'Polygon', coordinates: [footprintRing]},
-        tiles
-      },
-      derivedPlanningValues: {
-        horizonDistanceM: c.horizonKm * 1000,
-        vfovNearDistanceM: Number.isFinite(c.nearR) ? c.nearR : null,
-        vfovFarDistanceM: Number.isFinite(c.farR) ? c.farR : null,
-        envelopeNearDistanceM: envelopeNearM,
-        envelopeFarDistanceM: envelopeFarM,
-        horizontalEnvelopeHalfAngleDeg: c.hfov / 2,
-        targetHeightM: targetHeight
-      },
-      assumptions: [
-        'The intersection surface is a horizontal plane at local planning datum elevation 0 m.',
-        'Camera height is relative to the intersection plane and is not true altitude.',
-        'The footprint is a conservative near/far FOV envelope, not per-pixel ray-casting truth.',
-        'The envelope is limited by the lesser of the existing horizon-distance model and 30 km.',
-        'Rays above the horizon are clipped at the horizon distance.',
-        'Roll is fixed at 0 degrees; lens distortion is not modeled; the principal point is the image center; pixel centers use pixel + 0.5.',
-        'The tile manifest includes one tile of padding and is a conservative download range, not a geometric ground-truth result.'
-      ]
-    };
+      input.source
+    );
   }
 
   function serializeCameraScene(){
