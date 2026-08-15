@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 1 — 2026-08-16
+
+- Added DOM/Leaflet-free normalized `PortCamStore` with Project serialization, independent Camera/Target selection, preview/commit transactions, revision-aware lazy Observation cache, dirty baseline, and undo/redo APIs.
+- Adapted the existing single-Camera adapter to bootstrap and project Store data while retaining the current UI and `camera-scene/1.1` selected-Camera export.
+- Added focused Store Node tests and [`docs/PHASE_1_HANDOFF.md`](docs/PHASE_1_HANDOFF.md), including actual verification evidence and the remaining manual Leaflet interaction gate.
+
 ## Phase 0 — 2026-08-15
 
 - Extracted DOM／Leaflet-free `PortCamCore` calculation and schema helpers with Node golden tests for optics, spherical envelope, observations, angle conventions, project/scene contracts, and preview/commit semantics.

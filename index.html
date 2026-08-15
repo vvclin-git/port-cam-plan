@@ -336,10 +336,12 @@
 </div>
 
 <script src="./portcam-core.js"></script>
+<script src="./portcam-store.js"></script>
 <script src="./leaflet/leaflet.js"></script>
 <script>
 (() => {
   const Core = window.PortCamCore;
+  const Store = window.PortCamStore;
   // Standard optical-format approximations for a 16:9 active image.
   // Exact active dimensions vary by sensor model/vendor.
   const SENSOR_PRESETS = {
@@ -407,7 +409,7 @@
       sensorW.value = SENSOR_PRESETS[key].w.toFixed(2);
       sensorH.value = SENSOR_PRESETS[key].h.toFixed(2);
     }
-    updateAll();
+    syncCameraFromForm('sensor-preset');
   }
 
   function applyResolutionPreset() {
@@ -419,7 +421,7 @@
       resW.value = RESOLUTION_PRESETS[key].w;
       resH.value = RESOLUTION_PRESETS[key].h;
     }
-    updateAll();
+    syncCameraFromForm('resolution-preset');
   }
 
   const leafletCss = document.getElementById('leafletCss');
@@ -751,13 +753,45 @@
   let coverageLayers = [];
   let placeMode = false;
 
+  // The Store is the source of truth after this one-time DOM bootstrap.  The
+  // marker and form are projections; they never own calculation state.
+  const projectStore = Store.createProjectStore({
+    name: 'Untitled project', settings: {planningTargetHeightM: parseFloat(document.getElementById('targetHeight').value)},
+    cameras: [{id:'camera-a', name:'Camera A', position:{latitudeDeg:cameraLatLng.lat, longitudeDeg:cameraLatLng.lng},
+      sensorWidthMm:parseFloat(sensorW.value), sensorHeightMm:parseFloat(sensorH.value), widthPx:parseFloat(resW.value), heightPx:parseFloat(resH.value),
+      focalLengthMm:parseFloat(document.getElementById('focal').value), heightM:parseFloat(document.getElementById('camHeight').value),
+      headingDeg:parseFloat(document.getElementById('heading').value), tiltDownDeg:parseFloat(document.getElementById('tilt').value)}], targets: []
+  });
+  window.projectStoreForTest = projectStore;
+  const cameraFormFields = {sensorW:'sensorWidthMm', sensorH:'sensorHeightMm', resW:'widthPx', resH:'heightPx', focal:'focalLengthMm', camHeight:'heightM', heading:'headingDeg', tilt:'tiltDownDeg'};
+  function selectedCameraId(){ return projectStore.getState().uiState.selectedCameraId; }
+  function selectedCamera(){ return projectStore.getCamera(selectedCameraId()); }
+  function formCameraPatch(){ const patch = {}; Object.entries(cameraFormFields).forEach(([input, field]) => { patch[field] = parseFloat(document.getElementById(input).value); }); return patch; }
+  function syncCameraFromForm(label){ const id = selectedCameraId(); if (id) { projectStore.cancelPreview(); projectStore.patchCamera(id, formCameraPatch(), label); } updateAll(); }
+  function previewCameraFromForm(){ const id = selectedCameraId(); if (id) projectStore.beginPreview('camera', id, formCameraPatch()); updateAll(); }
+  function syncTargetHeight(label){ projectStore.patchSettings({planningTargetHeightM:parseFloat(document.getElementById('targetHeight').value)}, label); updateAll(); }
+  function syncTargetDimensions(label){
+    const id = projectStore.getState().uiState.selectedTargetId;
+    if (id) projectStore.patchTarget(id, {lengthM:parseFloat(document.getElementById('targetLong').value), widthM:parseFloat(document.getElementById('targetShort').value), heightM:parseFloat(document.getElementById('targetHeight').value)}, label);
+    updateAll();
+  }
+
   const ids = [
     'sensorW','sensorH','resW','resH','focal','camHeight','heading','tilt',
     'targetLong','targetShort','targetHeight','orientation'
   ];
   ids.forEach(id => {
-    document.getElementById(id).addEventListener('input', updateAll);
-    document.getElementById(id).addEventListener('change', updateAll);
+    const element = document.getElementById(id);
+    element.addEventListener('input', () => {
+      if (id === 'targetHeight' || id === 'targetLong' || id === 'targetShort' || id === 'orientation') updateAll();
+      else previewCameraFromForm();
+    });
+    element.addEventListener('change', () => {
+      if (id === 'targetHeight') syncTargetHeight('target-height');
+      else if (id === 'targetLong' || id === 'targetShort') syncTargetDimensions('target-dimensions');
+      else syncCameraFromForm('field-edit');
+    });
+    element.addEventListener('blur', () => { if (!['targetHeight','targetLong','targetShort','orientation'].includes(id)) syncCameraFromForm('field-edit'); });
   });
 
   sensorFormat.addEventListener('change', applySensorPreset);
@@ -765,6 +799,8 @@
 
   cameraMarker.on('dragend', e => {
     cameraLatLng = e.target.getLatLng();
+    projectStore.beginPreview('camera', selectedCameraId(), {position:{latitudeDeg:cameraLatLng.lat, longitudeDeg:cameraLatLng.lng}});
+    projectStore.commitPreview('camera-drag');
     updateAll();
   });
 
@@ -777,6 +813,7 @@
     if (placeMode) {
       cameraLatLng = e.latlng;
       cameraMarker.setLatLng(cameraLatLng);
+      projectStore.patchCamera(selectedCameraId(), {position:{latitudeDeg:cameraLatLng.lat, longitudeDeg:cameraLatLng.lng}}, 'camera-place');
       placeMode = false;
       document.getElementById('status').textContent = 'Camera 已更新；再點地圖其他位置可測試目標。';
       updateAll();
@@ -789,6 +826,11 @@
     } else {
       targetMarker.setLatLng(e.latlng);
     }
+    const targetState = projectStore.getState();
+    const targetId = targetState.uiState.selectedTargetId;
+    const patch = {position:{latitudeDeg:e.latlng.lat, longitudeDeg:e.latlng.lng}, lengthM:parseFloat(document.getElementById('targetLong').value), widthM:parseFloat(document.getElementById('targetShort').value), heightM:parseFloat(document.getElementById('targetHeight').value)};
+    if (targetId) projectStore.patchTarget(targetId, patch, 'target-place');
+    else projectStore.addTarget({id:'target-a', name:'Target A', ...patch});
     updateTargetResult(e.latlng);
   });
 
@@ -808,17 +850,9 @@
   function val(id){ return parseFloat(document.getElementById(id).value); }
 
   function compute(){
-    const camera = {
-      sensorWidthMm: val('sensorW'),
-      sensorHeightMm: val('sensorH'),
-      widthPx: val('resW'),
-      heightPx: val('resH'),
-      focalLengthMm: val('focal'),
-      heightM: val('camHeight'),
-      tiltDownDeg: val('tilt')
-    };
+    const camera = selectedCamera();
     const optics = Core.computeOptics(camera);
-    const horizon = Core.computePlanningHorizon(camera.heightM, val('targetHeight'));
+    const horizon = Core.computePlanningHorizon(camera.heightM, projectStore.getState().settings.planningTargetHeightM);
     const envelope = Core.computeGroundEnvelope(camera, optics, {horizonDistanceM: horizon.distanceM});
     return {
       pitchMm: optics.pixelPitchMm,
@@ -888,8 +922,9 @@
     clearCoverage();
 
     const c = compute();
-    const heading = val('heading');
-    const focal = val('focal');
+    const activeCamera = selectedCamera();
+    const heading = activeCamera.headingDeg;
+    const focal = activeCamera.focalLengthMm;
     const targetDim = document.getElementById('orientation').value === 'short'
       ? val('targetShort') : val('targetLong');
 
@@ -995,13 +1030,14 @@
 
   function updateTargetResult(latlng){
     const c = compute();
-    const d = Math.max(1, cameraLatLng.distanceTo(latlng));
-    const heading = val('heading');
-    const bearing = bearingBetween(cameraLatLng,latlng);
-    const inHFOV = angleDiff(bearing,heading) <= c.hfov/2;
-    const focal = val('focal');
-    const longPx = (val('targetLong')*focal)/(d*c.pitchMm);
-    const shortPx = (val('targetShort')*focal)/(d*c.pitchMm);
+    const targetId = projectStore.getState().uiState.selectedTargetId;
+    const observation = targetId && projectStore.getObservation(selectedCameraId(), targetId);
+    if (!observation || observation.calculationState === 'failed') return;
+    const d = observation.distanceM;
+    const bearing = observation.azimuthDeg;
+    const inHFOV = observation.inHFOV;
+    const longPx = observation.pixelWidth;
+    const shortPx = observation.yolo.shortSidePx;
     const p3 = shortPx/8, p4=shortPx/16, p5=shortPx/32;
     const horizonOK = d <= c.horizonKm*1000;
     const surface = surfaceLabel(classifySurfacePoint(latlng.lng,latlng.lat));
@@ -1035,17 +1071,18 @@
   }
 
   function validateCameraSceneInputs(){
-    const lat = cameraLatLng.lat;
-    const lng = cameraLatLng.lng;
-    const sw = val('sensorW');
-    const sh = val('sensorH');
-    const rw = val('resW');
-    const rh = val('resH');
-    const focal = val('focal');
-    const camHeight = val('camHeight');
-    const targetHeight = val('targetHeight');
-    const heading = val('heading');
-    const tilt = val('tilt');
+    const activeCamera = selectedCamera();
+    const lat = activeCamera.position.latitudeDeg;
+    const lng = activeCamera.position.longitudeDeg;
+    const sw = activeCamera.sensorWidthMm;
+    const sh = activeCamera.sensorHeightMm;
+    const rw = activeCamera.widthPx;
+    const rh = activeCamera.heightPx;
+    const focal = activeCamera.focalLengthMm;
+    const camHeight = activeCamera.heightM;
+    const targetHeight = projectStore.getState().settings.planningTargetHeightM;
+    const heading = activeCamera.headingDeg;
+    const tilt = activeCamera.tiltDownDeg;
     const zoom = Number(tileZoomSelect.value);
     const source = tileSourceByKey[baseMapSelect.value] || tileSourceByKey.osm;
     const errors = [];
@@ -1151,6 +1188,11 @@
   window.cameraSceneExportForTest = {buildCameraScene, serializeCameraScene};
 
   function updateAll(){
+    const activeCamera = selectedCamera();
+    if (activeCamera && activeCamera.position) {
+      cameraLatLng = L.latLng(activeCamera.position.latitudeDeg, activeCamera.position.longitudeDeg);
+      if (!cameraMarker.getLatLng().equals(cameraLatLng)) cameraMarker.setLatLng(cameraLatLng);
+    }
     updateSummary();
     drawCoverage();
     if (targetMarker) updateTargetResult(targetMarker.getLatLng());

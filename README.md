@@ -133,6 +133,19 @@ node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');con
 
 完整交接與實際驗證結果見 [`docs/PHASE_0_HANDOFF.md`](./docs/PHASE_0_HANDOFF.md)。
 
+## Phase 1 Project Store
+
+[`portcam-store.js`](./portcam-store.js) 將 Camera／Target canonical Project data 正規化，並以 UMD 形式同時提供瀏覽器 `window.PortCamStore` 與 Node 使用。Store 不依賴 DOM、Leaflet；UI、history、preview 與 Observation runtime cache 均不會寫入 `camera-project/1.0` JSON。Camera／Target selection 獨立，預覽不變更 revision/history/dirty，正式 commit 才建立單一 transaction；`undo()`、`redo()`、`markSaved()` 已可供後續 UI 使用。
+
+Phase 1 仍刻意保留現有單 Camera 畫面，尚未新增 Camera Rail、Save/Load 或可見 undo/redo 控制。完整實作範圍、驗證結果及需人工完成的 Leaflet 操作 gate 見 [`docs/PHASE_1_HANDOFF.md`](./docs/PHASE_1_HANDOFF.md)。
+
+Phase 1 回歸：
+
+```powershell
+node --test test_portcam_core.js test_portcam_store.js
+python -m unittest -v test_ray_cast_test.py
+```
+
 ## 驗證
 
 可先執行靜態檢查：
