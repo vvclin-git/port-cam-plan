@@ -18,18 +18,20 @@
       <div class="top-actions" aria-label="Project actions">
         <button class="icon-button" id="undoButton" type="button" title="Undo" aria-label="Undo">↶</button>
         <button class="icon-button" id="redoButton" type="button" title="Redo" aria-label="Redo">↷</button>
-        <button class="top-button" id="openInspector" type="button">Camera Inspector</button>
+        <button class="top-button" id="openInspector" type="button">Context Inspector</button>
         <button class="top-button" id="openProjectSettings" type="button">Project Settings</button>
-        <button class="top-button" id="openResult" type="button">Result Drawer</button>
+        <button class="top-button" id="openResult" type="button">Observation</button>
       </div>
     </header>
 
     <div class="shell-body">
-      <aside class="camera-rail" id="cameraRail" aria-label="Camera Rail">
-        <div class="rail-heading"><strong>Camera</strong><span>Rail</span></div>
+      <aside class="camera-rail object-manager" id="cameraRail" aria-label="Object Manager">
+        <div class="rail-heading"><strong>Object Manager</strong><span>Camera · Target</span></div>
+        <div class="manager-tabs" id="objectManagerTabs"><button type="button" data-manager-tab="cameras">Cameras</button><button type="button" data-manager-tab="targets">Targets</button></div>
+        <div class="manager-search"><input id="objectManagerSearch" type="search" placeholder="Search objects" /></div>
         <select id="cameraSelect" class="visually-hidden" aria-label="Camera selector"></select>
         <div class="rail-list" id="cameraRailItems"></div>
-        <div class="rail-footer"><button id="addCamera" class="rail-add" type="button" aria-label="新增 Camera">＋ Add</button></div>
+        <div class="rail-footer"><button id="addCamera" class="rail-add" type="button" aria-label="新增 Camera">＋ Add Camera</button><button id="addTargetManager" class="rail-add" type="button" aria-label="新增 Target">＋ Add Target</button></div>
       </aside>
 
       <main class="workspace-column" aria-label="Map workspace">
@@ -50,6 +52,8 @@
               <select id="tileZoomSelect" aria-label="Tile zoom"></select>
               <div class="tiny" id="tileZoomHelp">依目前底圖來源更新支援範圍。</div>
               <label class="check-row" for="surfaceToggle"><input id="surfaceToggle" type="checkbox" checked disabled /> 水域／陸地 Surface overlay</label>
+              <label class="check-row" for="cameraLabelsToggle"><input id="cameraLabelsToggle" type="checkbox" checked /> 顯示 Camera labels</label>
+              <label class="check-row" for="targetLabelsToggle"><input id="targetLabelsToggle" type="checkbox" checked /> 顯示 Target labels</label>
               <div class="surface-state tiny" id="surfaceState">載入中</div>
               <div class="tiny" id="surfaceHelp">固定 GeoJSON 載入中。</div>
               <button class="action-button" id="closeMapSettings" type="button" style="margin-top:10px">Close settings</button>
@@ -62,14 +66,15 @@
         </section>
 
         <section class="bottom-workspace" id="bottomWorkspace" aria-label="Bottom workspace">
-          <div class="workspace-bar"><strong>Workspace</strong><span>Targets · Comparison · YOLO Coverage</span><button class="workspace-toggle" id="workspaceToggle" type="button" aria-expanded="false" aria-controls="workspaceContent">Expand</button></div>
-          <div class="workspace-tabs" id="workspaceTabs" role="tablist" aria-label="Workspace tabs"><button class="workspace-tab" type="button" data-workspace-tab="targets" aria-selected="true">Targets</button><button class="workspace-tab" type="button" data-workspace-tab="comparison" aria-selected="false">Camera Comparison</button><button class="workspace-tab" type="button" data-workspace-tab="yolo" aria-selected="false">YOLO Coverage</button></div>
+          <div class="workspace-bar"><strong>Workspace</strong><span>Phase 4 analysis</span><button class="workspace-toggle" id="workspaceToggle" type="button" aria-expanded="false" aria-controls="workspaceContent">Expand</button></div>
+          <div class="workspace-tabs" id="workspaceTabs" role="tablist" aria-label="Workspace tabs"><button class="workspace-tab" type="button" data-workspace-tab="comparison" aria-selected="true">Camera Comparison</button><button class="workspace-tab" type="button" data-workspace-tab="yolo" aria-selected="false">YOLO Coverage</button></div>
           <div class="workspace-content" id="workspaceContent"><div class="empty-next"><strong>Coming next phase</strong>展開後可查看 Phase 4 預留工作區。</div></div>
         </section>
       </main>
 
-      <aside class="inspector" id="inspectorPanel" aria-label="Camera Inspector">
+      <aside class="inspector context-inspector" id="inspectorPanel" aria-label="Context Inspector">
         <div class="panel-header"><div><h2 id="cameraInspectorName">Camera A</h2><div class="subline" id="cameraInspectorSub">Selected Camera</div></div><span class="status-badge placed" id="cameraLifecycle">Placed</span><button class="panel-close" id="closeInspector" type="button" aria-label="關閉 Camera Inspector">×</button></div>
+        <div class="result-tabs" id="contextInspectorTabs" role="tablist"><button class="result-tab" data-inspector-tab="details" type="button">Details</button><button class="result-tab" data-inspector-tab="observation" type="button">Observation</button></div>
         <div class="panel-scroll" id="inspectorContent">
           <div id="inspectorEmpty" class="result-state neutral" hidden>請從 Camera Rail 選取 Camera。</div>
           <section class="panel-section"><button class="section-toggle" type="button" data-section-toggle="position" aria-expanded="true">Position &amp; Orientation</button><div class="section-body" data-section-body="position"><div class="field-grid"><div class="field"><label class="field-label" for="cameraLat">Latitude</label><input class="field-control" id="cameraLat" type="number" step="0.000001" data-camera-field="cameraLat" /></div><div class="field"><label class="field-label" for="cameraLng">Longitude</label><input class="field-control" id="cameraLng" type="number" step="0.000001" data-camera-field="cameraLng" /></div><div class="field"><label class="field-label" for="camHeight">Camera height</label><div class="input-suffix"><input class="field-control" id="camHeight" type="number" step="0.1" data-camera-field="camHeight" /><span>m</span></div></div><div class="field"><label class="field-label" for="heading">Heading</label><div class="input-suffix"><input class="field-control" id="heading" type="number" step="0.1" data-camera-field="heading" /><span>°</span></div></div><div class="field full"><label class="field-label" for="tilt">向下俯角 Tilt (+ downward)</label><div class="input-suffix"><input class="field-control" id="tilt" type="number" step="0.1" data-camera-field="tilt" /><span>°</span></div></div></div><div class="tiny" id="lockedHint" style="margin-top:7px"></div></div></section>
@@ -77,9 +82,10 @@
           <section class="panel-section"><button class="section-toggle" type="button" data-section-toggle="derived" aria-expanded="true">Derived FOV</button><div class="section-body" data-section-body="derived"><div class="metric-list"><div class="metric"><span>Pixel pitch</span><b id="pixelPitch">—</b></div><div class="metric"><span>HFOV</span><b id="hfov">—</b></div><div class="metric"><span>VFOV</span><b id="vfov">—</b></div><div class="metric"><span>Horizon distance</span><b id="horizon">—</b></div><div class="metric"><span>VFOV near</span><b id="nearR">—</b></div><div class="metric"><span>VFOV far</span><b id="farR">—</b></div></div><div class="tiny" style="margin-top:7px">Horizon 使用 m／km；Tilt 正值代表向下俯角。</div></div></section>
           <section class="panel-section"><button class="section-toggle" type="button" data-section-toggle="actions" aria-expanded="true">Actions</button><div class="section-body" data-section-body="actions"><div class="inspector-actions"><button class="action-button primary" id="relocateCamera" type="button">Relocate</button><button class="action-button" id="fitCamera" type="button">Fit Camera</button><button class="action-button" id="fitFov" type="button">Fit FOV</button><button class="action-button" id="duplicateCamera" type="button">Duplicate</button><button class="action-button" id="renameCamera" type="button">Rename</button><button class="action-button" id="resetCamera" type="button">Reset</button><button class="action-button danger" id="deleteCamera" type="button">Delete</button><button class="action-button" id="openResultFromInspector" type="button">Open Result</button></div><div class="panel-section" style="padding-bottom:0"><div class="tiny">Selected Camera Scene · camera-scene/1.1</div><div class="inspector-actions" style="margin-top:7px"><button class="action-button" id="downloadCameraScene" type="button">Download Scene</button><button class="action-button" id="copyCameraScene" type="button">Copy JSON</button></div><div class="export-status tiny" id="exportState" role="status" aria-live="polite">尚未匯出。</div><div class="form-error" id="exportError" role="alert"></div></div></div></section>
         </div>
+        <div class="result-content" id="contextDynamicContent" hidden></div>
       </aside>
 
-      <aside class="result-drawer is-closed" id="resultDrawer" aria-label="Result Drawer" aria-hidden="true"><div class="panel-header"><div><h2 id="resultTitle">Result Drawer</h2><div class="subline" id="resultSub">Target observation</div></div><button class="action-button" id="clearTarget" type="button">Clear Target</button><button class="panel-close" id="closeResultDrawer" type="button" aria-label="關閉 Result Drawer">×</button></div><div class="result-tabs" id="resultTabs" role="tablist" aria-label="Result tabs"><button class="result-tab" type="button" data-result-tab="observation" aria-selected="true">Observation</button><button class="result-tab" type="button" data-result-tab="target" aria-selected="false">Target</button></div><div class="result-content" id="resultContent"></div></aside>
+      <aside class="result-drawer is-closed" id="resultDrawer" aria-label="Legacy Result Drawer" aria-hidden="true" hidden><div id="resultContent"></div></aside>
     </div>
   </div>
 
@@ -94,7 +100,7 @@
     (() => {
       const mapError = document.getElementById('mapError');
       if (typeof L === 'undefined') { mapError.style.display = 'grid'; return; }
-      const map = L.map('map', {zoomControl: false}).setView([22.6108, 120.2890], 13);
+      const map = L.map('map', {zoomControl: false, scrollWheelZoom: false}).setView([22.6108, 120.2890], 13);
       L.control.zoom({position: 'bottomleft'}).addTo(map);
       const store = window.PortCamStore.createProjectStore(window.PortCamUI.defaultProject());
       const controller = window.PortCamUI.createAppController({store, map, leaflet: L, root: document.getElementById('appShell')});

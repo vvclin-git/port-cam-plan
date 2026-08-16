@@ -50,7 +50,10 @@
           interactionMode: 'navigate',
           panelOpen: {inspector: true, result: false, mapSettings: false, workspace: false},
           activeResultTab: 'observation',
-          activeWorkspaceTab: 'targets'
+          activeWorkspaceTab: 'comparison',
+          targetSearchQuery: '', cameraSearchQuery: '', objectManagerTab: 'cameras',
+          focusedEntity: cameraOrder[0] ? {kind: 'camera', id: cameraOrder[0]} : targetOrder[0] ? {kind: 'target', id: targetOrder[0]} : null,
+          inspectorTab: 'details'
         },
         observationsByKey: {}};
     }
@@ -81,7 +84,12 @@
         interactionMode: INTERACTION_MODES.has(ui.interactionMode) ? ui.interactionMode : 'navigate',
         panelOpen: {...(ui.panelOpen || {}), inspector: ui.panelOpen?.inspector !== false, result: Boolean(ui.panelOpen?.result), mapSettings: Boolean(ui.panelOpen?.mapSettings), workspace: Boolean(ui.panelOpen?.workspace)},
         activeResultTab: RESULT_TABS.has(ui.activeResultTab) ? ui.activeResultTab : 'observation',
-        activeWorkspaceTab: WORKSPACE_TABS.has(ui.activeWorkspaceTab) ? ui.activeWorkspaceTab : 'targets'
+        activeWorkspaceTab: ui.activeWorkspaceTab === 'yolo' ? 'yolo' : 'comparison',
+        targetSearchQuery: typeof ui.targetSearchQuery === 'string' ? ui.targetSearchQuery : ''
+        , cameraSearchQuery: typeof ui.cameraSearchQuery === 'string' ? ui.cameraSearchQuery : '',
+        objectManagerTab: ui.objectManagerTab === 'targets' ? 'targets' : 'cameras',
+        focusedEntity: ui.focusedEntity && restored[ui.focusedEntity.kind === 'camera' ? 'camerasById' : 'targetsById']?.[ui.focusedEntity.id] ? ui.focusedEntity : (restored.camerasById[ui.selectedCameraId] ? {kind:'camera', id:ui.selectedCameraId} : restored.targetsById[ui.selectedTargetId] ? {kind:'target', id:ui.selectedTargetId} : null),
+        inspectorTab: ui.inspectorTab === 'observation' ? 'observation' : 'details'
       };
       state = restored; preview = null;
     }
@@ -95,9 +103,9 @@
       if (entity.locked && calc) return false;
       return transaction(label || `${kind}-patch`, () => { Object.assign(entity, clone(patch)); if (calc) { entity.revision += 1; kind === 'camera' ? invalidateCamera(id) : invalidateTarget(id); } });
     }
-    function removeEntity(kind, id) { const table = kind === 'camera' ? state.camerasById : state.targetsById; const orderName = kind === 'camera' ? 'cameraOrder' : 'targetOrder'; if (!table[id]) return false; return transaction(`${kind}-remove`, () => { const index = state[orderName].indexOf(id); delete table[id]; state[orderName].splice(index, 1); kind === 'camera' ? invalidateCamera(id) : invalidateTarget(id); const selectionName = kind === 'camera' ? 'selectedCameraId' : 'selectedTargetId'; if (state.uiState[selectionName] === id) state.uiState[selectionName] = nextSelection(state[orderName], index); }); }
-    function duplicateEntity(kind, id) { const table = kind === 'camera' ? state.camerasById : state.targetsById; const entity = table[id]; if (!entity) throw new Error(`${kind} not found: ${id}`); const copy = clone(entity); delete copy.id; copy.name = `${entity.name || kind} copy`; if (kind === 'camera') { copy.locked = false; copy.color = undefined; const nextId = addCamera(copy); setSelection('camera', nextId); return nextId; } return addTarget(copy); }
-    function setSelection(kind, id) { const exists = !id || (kind === 'camera' ? state.camerasById[id] : state.targetsById[id]); if (!exists) throw new Error(`${kind} not found: ${id}`); state.uiState[kind === 'camera' ? 'selectedCameraId' : 'selectedTargetId'] = id || null; emit(); }
+    function removeEntity(kind, id) { const table = kind === 'camera' ? state.camerasById : state.targetsById; const orderName = kind === 'camera' ? 'cameraOrder' : 'targetOrder'; if (!table[id]) return false; return transaction(`${kind}-remove`, () => { const index = state[orderName].indexOf(id); delete table[id]; state[orderName].splice(index, 1); kind === 'camera' ? invalidateCamera(id) : invalidateTarget(id); const selectionName = kind === 'camera' ? 'selectedCameraId' : 'selectedTargetId'; if (state.uiState[selectionName] === id) state.uiState[selectionName] = nextSelection(state[orderName], index); if (state.uiState.focusedEntity?.kind === kind && state.uiState.focusedEntity.id === id) { const fallback = state.uiState[selectionName]; state.uiState.focusedEntity = fallback ? {kind, id:fallback} : null; } }); }
+    function duplicateEntity(kind, id) { const table = kind === 'camera' ? state.camerasById : state.targetsById; const entity = table[id]; if (!entity) throw new Error(`${kind} not found: ${id}`); const copy = clone(entity); delete copy.id; copy.name = `${entity.name || kind} copy`; copy.locked = false; if (kind === 'camera') { copy.color = undefined; const nextId = addCamera(copy); setSelection('camera', nextId); return nextId; } const nextId = addTarget(copy); setSelection('target', nextId); return nextId; }
+    function setSelection(kind, id) { const exists = !id || (kind === 'camera' ? state.camerasById[id] : state.targetsById[id]); if (!exists) throw new Error(`${kind} not found: ${id}`); state.uiState[kind === 'camera' ? 'selectedCameraId' : 'selectedTargetId'] = id || null; state.uiState.focusedEntity = id ? {kind, id} : state.uiState.focusedEntity?.kind === kind ? null : state.uiState.focusedEntity; emit(); }
     function setInteractionMode(mode) { if (!INTERACTION_MODES.has(mode)) throw new Error(`invalid interaction mode: ${mode}`); if (state.uiState.interactionMode !== mode) { state.uiState.interactionMode = mode; emit(); } }
     function setPanelOpen(panel, open) {
       panel = PANEL_ALIASES[panel] || panel;
@@ -113,6 +121,14 @@
       if (!WORKSPACE_TABS.has(tab)) throw new Error(`invalid workspace tab: ${tab}`);
       if (state.uiState.activeWorkspaceTab !== tab) { state.uiState.activeWorkspaceTab = tab; emit(); }
     }
+    function setTargetSearchQuery(query) {
+      const value = String(query == null ? '' : query);
+      if (state.uiState.targetSearchQuery !== value) { state.uiState.targetSearchQuery = value; emit(); }
+    }
+    function setCameraSearchQuery(query) { const value = String(query == null ? '' : query); if (state.uiState.cameraSearchQuery !== value) { state.uiState.cameraSearchQuery = value; emit(); } }
+    function setObjectManagerTab(tab) { if (!['cameras','targets'].includes(tab)) throw new Error(`invalid object manager tab: ${tab}`); const kind = tab === 'cameras' ? 'camera' : 'target', id = state.uiState[kind === 'camera' ? 'selectedCameraId' : 'selectedTargetId'], next = id ? {kind, id} : null; if (state.uiState.objectManagerTab !== tab || JSON.stringify(state.uiState.focusedEntity) !== JSON.stringify(next)) { state.uiState.objectManagerTab = tab; state.uiState.focusedEntity = next; emit(); } }
+    function setFocusedEntity(kind, id) { if (!['camera','target'].includes(kind)) throw new Error(`invalid entity kind: ${kind}`); const table = kind === 'camera' ? state.camerasById : state.targetsById; if (!table[id]) throw new Error(`${kind} not found: ${id}`); state.uiState.focusedEntity = {kind, id}; state.uiState[kind === 'camera' ? 'selectedCameraId' : 'selectedTargetId'] = id; emit(); }
+    function setInspectorTab(tab) { if (!['details','observation'].includes(tab)) throw new Error(`invalid inspector tab: ${tab}`); if (state.uiState.inspectorTab !== tab) { state.uiState.inspectorTab = tab; emit(); } }
     function beginPreview(kind, id, patch) { const entity = (kind === 'camera' ? state.camerasById : state.targetsById)[id]; if (!entity) throw new Error(`${kind} not found: ${id}`); if (entity.locked && Object.keys(patch).some(kind === 'camera' ? isCalculationCameraField : isCalculationTargetField)) return false; preview = {kind, id, patch: {...(preview && preview.kind === kind && preview.id === id ? preview.patch : {}), ...clone(patch)}}; emit(); return true; }
     function cancelPreview() { if (!preview) return; preview = null; emit(); }
     function commitPreview(label) { if (!preview) return false; const value = preview; preview = null; return patchEntity(value.kind, value.id, value.patch, label || `${value.kind}-gesture`); }
@@ -121,7 +137,7 @@
       if (!usingPreview && cached && cached.cameraRevision === camera.revision && cached.targetRevision === target.revision && cached.calculatorModelVersion === CALCULATOR_MODEL_VERSION) return clone(cached);
       try { const observation = Core.computeObservation(camera, target); const entry = Core.buildObservationCacheEntry(camera, target, observation); if (!usingPreview) state.observationsByKey[key] = entry; return clone(entry); } catch (error) { const failed = {key, cameraId, targetId, cameraRevision: camera.revision, targetRevision: target.revision, calculatorModelVersion: CALCULATOR_MODEL_VERSION, generatedAt: new Date().toISOString(), calculationState: 'failed', visibilityState: 'unknown', error: error.message}; if (!usingPreview) state.observationsByKey[key] = failed; return clone(failed); }
     }
-    return {getState: publicState, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }, toCameraProject() { return clone(canonical(state)); }, isDirty, addCamera, addTarget, patchCamera(id, patch, label) { return patchEntity('camera', id, patch, label); }, patchTarget(id, patch, label) { return patchEntity('target', id, patch, label); }, patchSettings(patch, label) { return transaction(label || 'settings-patch', () => { Object.assign(state.settings, clone(patch)); }); }, removeCamera(id) { return removeEntity('camera', id); }, removeTarget(id) { return removeEntity('target', id); }, duplicateCamera(id) { return duplicateEntity('camera', id); }, duplicateTarget(id) { return duplicateEntity('target', id); }, selectCamera(id) { setSelection('camera', id); }, selectTarget(id) { setSelection('target', id); }, setInteractionMode, setPanelOpen, setActiveResultTab, setActiveWorkspaceTab, beginPreview, cancelPreview, commitPreview, getCamera(id, includePreview) { const value = getEntity('camera', id, includePreview); return value && clone(value); }, getTarget(id, includePreview) { const value = getEntity('target', id, includePreview); return value && clone(value); }, getObservation, markSaved() { baseline = canonical(state); emit(); }, undo() { if (!historyIndex) return false; restore(history[--historyIndex].before); emit(); return true; }, redo() { if (historyIndex >= history.length) return false; restore(history[historyIndex++].after); emit(); return true; }};
+    return {getState: publicState, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }, toCameraProject() { return clone(canonical(state)); }, isDirty, addCamera, addTarget, patchCamera(id, patch, label) { return patchEntity('camera', id, patch, label); }, patchTarget(id, patch, label) { return patchEntity('target', id, patch, label); }, patchSettings(patch, label) { return transaction(label || 'settings-patch', () => { Object.assign(state.settings, clone(patch)); }); }, removeCamera(id) { return removeEntity('camera', id); }, removeTarget(id) { return removeEntity('target', id); }, duplicateCamera(id) { return duplicateEntity('camera', id); }, duplicateTarget(id) { return duplicateEntity('target', id); }, selectCamera(id) { setSelection('camera', id); }, selectTarget(id) { setSelection('target', id); }, setFocusedEntity, setInteractionMode, setPanelOpen, setActiveResultTab, setActiveWorkspaceTab, setObjectManagerTab, setInspectorTab, setTargetSearchQuery, setCameraSearchQuery, setSearchQuery: setTargetSearchQuery, beginPreview, cancelPreview, commitPreview, getCamera(id, includePreview) { const value = getEntity('camera', id, includePreview); return value && clone(value); }, getTarget(id, includePreview) { const value = getEntity('target', id, includePreview); return value && clone(value); }, getObservation, markSaved() { baseline = canonical(state); emit(); }, undo() { if (!historyIndex) return false; restore(history[--historyIndex].before); emit(); return true; }, redo() { if (historyIndex >= history.length) return false; restore(history[historyIndex++].after); emit(); return true; }};
   }
   return {createProjectStore};
 }));

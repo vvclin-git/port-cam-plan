@@ -1,5 +1,18 @@
 # Changelog
 
+## Phase 3.2 — 2026-08-16
+
+- Consolidated Camera Rail and Target List into Object Manager tabs and merged the visible inspector/drawer experience into Context Inspector Details/Observation.
+- Added UI-only manager focus/tab/search and inspector tab state without changing project/scene schemas or history semantics.
+
+## Phase 3.1 — 2026-08-16
+
+- Added shared Camera／Target marker interaction: selection, labels, lock-aware drag preview／single commit, duplicate／delete fallback, Fit Target, and observation-aware projections.
+- Replaced Target circle markers with `L.marker`／`L.divIcon`, fixed pane ordering and non-interactive FOV／YOLO／centerline／connection geometry so Targets remain clickable inside analysis overlays.
+- Disabled Leaflet built-in wheel zoom and added normalized, cooldown-limited, min／max-bounded controller wheel handling with Ctrl+wheel pass-through and destroy cleanup.
+- Added searchable Bottom Workspace Targets list with row／marker selection, rename, visibility, enabled, locked, duplicate, delete, and Fit Target actions; search remains UI-only.
+- Added independent Camera／Target label switches, 22 Node tests, and [`docs/PHASE_3_1_HANDOFF.md`](docs/PHASE_3_1_HANDOFF.md).
+
 ## Phase 3 — 2026-08-16
 
 - Replaced the compact Phase 2 page with a Store-driven App Shell: Top Bar, Camera Rail, Camera Inspector, Map Workspace, Result Drawer, Map Settings, and collapsed／expanded Bottom Workspace.

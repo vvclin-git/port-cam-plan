@@ -158,7 +158,21 @@ python -m unittest -v test_ray_cast_test.py
 - Store 的 `setPanelOpen`、`setActiveResultTab`、`setActiveWorkspaceTab` 是 UI-only，不進 `camera-project/1.0`、Undo/Redo 或 dirty state。
 - Camera Inspector 支援鍵盤座標定位、preview／blur／Enter commit、鎖定狀態、Derived FOV、Fit、Duplicate、Rename、Reset 與 selected Camera `camera-scene/1.1` export。
 - Result Drawer 支援 Target-only、visible、outside-FOV amber、disabled／draft／unavailable 與 failed 狀態；Target close 不清除 selection，Clear Target 才會清除。
-- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown` 與 tile zoom；Project Import／Save、Comparison table、完整 Target List 與精確四角 ray 仍不在本階段。
+- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown` 與 tile zoom；Phase 3.1 已加入搜尋式 Target List 與獨立 labels 設定。Project Import／Save、Comparison table 與精確四角 ray 仍不在本階段。
+
+## Phase 3.1 共用 Entity、地圖互動與 Target List
+
+[`docs/PHASE_3_1_HANDOFF.md`](./docs/PHASE_3_1_HANDOFF.md) 記錄本階段的共用 drag contract、wheel policy、pane 順序與人工驗收界線。
+
+- Camera／Target 共用 `PortCamMap.createEntityMarkerInteraction`，只有 selected、visible、unlocked 且 `navigate` 才能拖曳；preview 不改 revision/history/dirty，drag end 只 commit 一次。
+- Target 使用 `L.marker`／`L.divIcon` crosshair；FOV、YOLO、centerline、connection line 不攔截 pointer，只有 selected Target 顯示 connection line。
+- Wheel 由 MapController 單一 non-passive handler 處理，正規化 pixel／line／page delta，同方向 180 ms burst 最多縮放一級，Ctrl+wheel 保留瀏覽器縮放。
+- Bottom Workspace Targets 分頁支援 Search、Select、Rename、Visible、Enabled、Locked、Duplicate、Delete、Fit Target；Search 是 UI-only state，不進 Project、history 或 dirty。
+- Camera／Target labels 預設開啟，Map Settings 可分別切換；rename 更新既有 tooltip，不重建或累積 labels。
+
+## Phase 3.2 Unified Object Management UI
+
+左側 Object Manager 收斂 Cameras／Targets 表格；右側 Context Inspector 以 Details／Observation 顯示 focused entity 與 selected Camera × Target pairing。Bottom Workspace 僅保留 Phase 4 的 Comparison／YOLO placeholders。細節見 [`docs/PHASE_3_2_HANDOFF.md`](./docs/PHASE_3_2_HANDOFF.md)。
 
 完整實際範圍、API、Node／browser evidence 與未完成人工 gate 見 [`docs/PHASE_3_HANDOFF.md`](./docs/PHASE_3_HANDOFF.md)。
 

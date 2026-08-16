@@ -53,6 +53,10 @@ test('duplicate makes a separate entity and metadata-only changes make dirty wit
   const s = store(); s.markSaved(); const copy = s.duplicateCamera('a'); s.patchCamera(copy,{name:'B'});
   assert.notEqual(copy,'a'); assert.equal(s.getState().camerasById[copy].revision,0); assert.equal(s.isDirty(),true);
 });
+test('target duplicate copies placement and metadata but unlocks and selects the new target', () => {
+  const s = store(); s.patchTarget('t1', {locked:true}); const before = s.getTarget('t1'); const copy = s.duplicateTarget('t1'); const next = s.getTarget(copy);
+  assert.notEqual(copy, 't1'); assert.equal(next.name, 'T copy'); assert.deepEqual(next.position, before.position); assert.equal(next.locked, false); assert.equal(s.getState().uiState.selectedTargetId, copy);
+});
 test('UI-only panel and tab state does not affect project dirty state or history', () => {
   const s = store(); s.markSaved(); const before = s.getState();
   s.setPanelOpen('result', true); s.setPanelOpen('workspace', true); s.setActiveResultTab('target'); s.setActiveWorkspaceTab('comparison');
@@ -67,4 +71,13 @@ test('UI-only panel and tab state does not affect project dirty state or history
   assert.throws(() => s.setPanelOpen('missing', true), /invalid panel/);
   assert.throws(() => s.setActiveResultTab('missing'), /invalid result tab/);
   assert.throws(() => s.setActiveWorkspaceTab('missing'), /invalid workspace tab/);
+});
+test('Target search is UI-only and remains out of project/history/dirty state', () => {
+  const s = store(); s.markSaved(); const before = s.getState(); s.setTargetSearchQuery('harbor'); const after = s.getState();
+  assert.equal(after.uiState.targetSearchQuery, 'harbor'); assert.deepEqual(after.history, before.history); assert.equal(after.dirty, false); assert.equal(JSON.stringify(s.toCameraProject()).includes('harbor'), false);
+});
+test('Object Manager focus, tabs, and independent searches stay UI-only while preserving observation pairing', () => {
+  const s = store(); s.markSaved(); const before=s.getState(); s.setFocusedEntity('target','t2'); s.setObjectManagerTab('cameras'); s.setInspectorTab('observation'); s.setCameraSearchQuery('camera'); s.setTargetSearchQuery('target'); const after=s.getState();
+  assert.deepEqual(after.uiState.focusedEntity,{kind:'camera',id:'a'}); assert.equal(after.uiState.selectedCameraId,'a'); assert.equal(after.uiState.selectedTargetId,'t2'); assert.equal(after.uiState.inspectorTab,'observation'); assert.equal(after.uiState.cameraSearchQuery,'camera'); assert.deepEqual(after.history,before.history); assert.equal(after.dirty,false); assert.equal(JSON.stringify(s.toCameraProject()).includes('focusedEntity'),false);
+  s.setFocusedEntity('target','t2'); s.removeTarget('t2'); assert.deepEqual(s.getState().uiState.focusedEntity,{kind:'target',id:'t1'}); s.undo(); assert.equal(s.getState().uiState.focusedEntity.id,'t1');
 });
