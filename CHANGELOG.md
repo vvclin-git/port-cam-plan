@@ -1,5 +1,19 @@
 # Changelog
 
+## Phase 3 — 2026-08-16
+
+- Replaced the compact Phase 2 page with a Store-driven App Shell: Top Bar, Camera Rail, Camera Inspector, Map Workspace, Result Drawer, Map Settings, and collapsed／expanded Bottom Workspace.
+- Added `portcam-ui.js` and `app.css`, responsive 100dvh layout rules, ResizeObserver-driven Leaflet invalidation, accessible mode／selection states, Camera preview／commit form flow, coordinate-only Target creation, and Result Drawer availability states.
+- Added UI-only Store panel/tab actions without changing `camera-project/1.0`, dirty state, or Undo/Redo; added target fit helpers and preview projection cleanup to the MapController.
+- Preserved selected-Camera `camera-scene/1.1`, Surface `water`／`land`／`unknown`, OSM／NLSC relative paths, and the Phase 0 calculation contracts.
+- Added 18 Node regression tests including UI-only Store state isolation and [`docs/PHASE_3_HANDOFF.md`](docs/PHASE_3_HANDOFF.md).
+
+## Phase 2 — 2026-08-16
+
+- Added reactive multi-Camera Leaflet layer registries and a compact Camera Manager driven by one Project Store subscription.
+- Added formal interaction modes, disabled/draft Observation availability semantics, MapController fake-Leaflet regression coverage, and the Phase 2 handoff.
+- Corrected Phase 1 documentation: Store coordinate undo/redo did not prove legacy Leaflet/form projections were reactive.
+
 ## Phase 1 — 2026-08-16
 
 - Added DOM/Leaflet-free normalized `PortCamStore` with Project serialization, independent Camera/Target selection, preview/commit transactions, revision-aware lazy Observation cache, dirty baseline, and undo/redo APIs.

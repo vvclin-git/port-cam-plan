@@ -137,14 +137,30 @@ node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');con
 
 [`portcam-store.js`](./portcam-store.js) 將 Camera／Target canonical Project data 正規化，並以 UMD 形式同時提供瀏覽器 `window.PortCamStore` 與 Node 使用。Store 不依賴 DOM、Leaflet；UI、history、preview 與 Observation runtime cache 均不會寫入 `camera-project/1.0` JSON。Camera／Target selection 獨立，預覽不變更 revision/history/dirty，正式 commit 才建立單一 transaction；`undo()`、`redo()`、`markSaved()` 已可供後續 UI 使用。
 
-Phase 1 仍刻意保留現有單 Camera 畫面，尚未新增 Camera Rail、Save/Load 或可見 undo/redo 控制。完整實作範圍、驗證結果及需人工完成的 Leaflet 操作 gate 見 [`docs/PHASE_1_HANDOFF.md`](./docs/PHASE_1_HANDOFF.md)。
+## Phase 2 Reactive Leaflet 多 Camera
+
+[`portcam-map.js`](./portcam-map.js) 將 Store state 投影成每台 Camera/Target 各自的 Leaflet LayerGroup；Camera Manager 可選取、新增、複製、重新定位、刪除與切換 visible/enabled/locked。所有畫面更新由單一 Store subscription 驅動，因此 Undo/Redo、selection、visibility、lock、enabled 與 commit 都會更新 marker、FOV、表單與 connection line，而不是依賴舊的 `updateAll()`。
+
+`camera-project/1.0` 與 selected-Camera `camera-scene/1.1` 保持不變。完整範圍、測試證據與尚需 real-browser 驗收的互動項目見 [`docs/PHASE_2_HANDOFF.md`](./docs/PHASE_2_HANDOFF.md)。
 
 Phase 1 回歸：
 
 ```powershell
-node --test test_portcam_core.js test_portcam_store.js
+node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js
 python -m unittest -v test_ray_cast_test.py
 ```
+
+## Phase 3 App Shell 與核心工作區
+
+正式入口 [`index.html`](./index.html) 現在使用 [`app.css`](./app.css) 與 [`portcam-ui.js`](./portcam-ui.js) 投影桌面 App Shell：Top Bar、Camera Rail、Camera Inspector、Map Workspace、Result Drawer，以及預設收合的 Bottom Workspace。
+
+- `PortCamUI.createAppController({store, mapController, root})` 負責 Store-driven DOM projection、panel state、responsive invalidation 與 cleanup；實際頁面以 `map`／Leaflet 建立既有 `PortCamMap` controller。
+- Store 的 `setPanelOpen`、`setActiveResultTab`、`setActiveWorkspaceTab` 是 UI-only，不進 `camera-project/1.0`、Undo/Redo 或 dirty state。
+- Camera Inspector 支援鍵盤座標定位、preview／blur／Enter commit、鎖定狀態、Derived FOV、Fit、Duplicate、Rename、Reset 與 selected Camera `camera-scene/1.1` export。
+- Result Drawer 支援 Target-only、visible、outside-FOV amber、disabled／draft／unavailable 與 failed 狀態；Target close 不清除 selection，Clear Target 才會清除。
+- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown` 與 tile zoom；Project Import／Save、Comparison table、完整 Target List 與精確四角 ray 仍不在本階段。
+
+完整實際範圍、API、Node／browser evidence 與未完成人工 gate 見 [`docs/PHASE_3_HANDOFF.md`](./docs/PHASE_3_HANDOFF.md)。
 
 ## 驗證
 

@@ -26,8 +26,14 @@ test('visible/enabled are metadata while locked rejects calculation changes', ()
 });
 test('draft lifecycle has no observation until placed', () => {
   const s = store(); const id = s.addCamera(camera({lifecycle:'draft-unplaced'}));
-  assert.equal(s.getObservation(id, 't1'), null); s.patchCamera(id, {lifecycle:'placed'});
+  assert.deepEqual(s.getObservation(id, 't1').calculationState, 'idle'); assert.equal(Object.keys(s.getState().observationsByKey).length, 0); s.patchCamera(id, {lifecycle:'placed'});
   assert.equal(s.getObservation(id, 't1').calculationState, 'current');
+});
+test('formal interaction modes and disabled observations stay outside the cache', () => {
+  const s = store(); assert.equal(s.getState().uiState.interactionMode, 'navigate');
+  assert.throws(() => s.setInteractionMode('target'), /invalid interaction mode/); s.patchCamera('a', {enabled:false});
+  const result = s.getObservation('a', 't1'); assert.equal(result.visibilityState, 'unavailable'); assert.equal(result.reason, 'disabled');
+  assert.equal(Object.keys(s.getState().observationsByKey).length, 0);
 });
 test('preview is not dirty/history/revision and a committed gesture is one transaction', () => {
   const s = store(); s.markSaved(); s.beginPreview('camera','a',{headingDeg:10}); s.beginPreview('camera','a',{headingDeg:20});
@@ -46,4 +52,19 @@ test('observations are lazy, isolated, stale on relevant changes, and cleaned up
 test('duplicate makes a separate entity and metadata-only changes make dirty without calculation revision', () => {
   const s = store(); s.markSaved(); const copy = s.duplicateCamera('a'); s.patchCamera(copy,{name:'B'});
   assert.notEqual(copy,'a'); assert.equal(s.getState().camerasById[copy].revision,0); assert.equal(s.isDirty(),true);
+});
+test('UI-only panel and tab state does not affect project dirty state or history', () => {
+  const s = store(); s.markSaved(); const before = s.getState();
+  s.setPanelOpen('result', true); s.setPanelOpen('workspace', true); s.setActiveResultTab('target'); s.setActiveWorkspaceTab('comparison');
+  const after = s.getState();
+  assert.equal(after.uiState.panelOpen.result, true);
+  assert.equal(after.uiState.panelOpen.workspace, true);
+  assert.equal(after.uiState.activeResultTab, 'target');
+  assert.equal(after.uiState.activeWorkspaceTab, 'comparison');
+  assert.deepEqual(after.history, before.history);
+  assert.equal(s.isDirty(), false);
+  assert.equal(JSON.stringify(s.toCameraProject()).includes('panelOpen'), false);
+  assert.throws(() => s.setPanelOpen('missing', true), /invalid panel/);
+  assert.throws(() => s.setActiveResultTab('missing'), /invalid result tab/);
+  assert.throws(() => s.setActiveWorkspaceTab('missing'), /invalid workspace tab/);
 });

@@ -50,3 +50,7 @@
 - The legacy form has no visible Save/Load or undo/redo controls; APIs are deliberately provided for the following UI phase.
 - Manually verify Camera drag, Camera place mode, Target map click/result, presets as one history gesture, and Scene download in a standard desktop browser before declaring full browser acceptance.
 - Phase 2 may introduce the App Shell/Camera Rail/Result Drawer only after preserving the Store contracts and completing that manual Leaflet gate. EPSG:3826, exact four-corner projection, and new Ray Casting/water UI remain out of scope.
+
+## Phase 2 correction
+
+Phase 1 Store undo/redo restored canonical Camera coordinates and emitted its subscription notification, but the legacy page did not subscribe the Leaflet marker, coverage layers, or form to that notification. Therefore the earlier coordinate-only console check is **not** evidence that marker/FOV/form followed undo/redo. Camera drag, placement, Target click, presets, and Scene download retain their recorded manual outcomes; only reactive UI projection moved to Phase 2.
