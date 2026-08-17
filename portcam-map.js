@@ -54,7 +54,7 @@
     };
   }
 
-  function createMapController({map, leaflet: L, store, onCameraDrag, onMapClick, onTargetSelect, labelVisibility}) {
+  function createMapController({map, leaflet: L, store, onCameraDrag, onMapClick, onCameraSelect, onTargetSelect, labelVisibility}) {
     if (!map || !L || !store) throw new Error('createMapController requires map, Leaflet and store');
     const cameraLayers = new Map(), targetLayers = new Map();
     const labels = {camera: labelVisibility?.camera !== false, target: labelVisibility?.target !== false};
@@ -92,7 +92,7 @@
       const group = layerGroup();
       const marker = L.marker(point(L, camera.position), {draggable: false, pane: PANE_NAMES.camera, bubblingMouseEvents: false}).bindTooltip(camera.name || camera.id, entityTooltip());
       marker.__portcamEntityId = camera.id;
-      marker.on('click', event => { event?.originalEvent?.stopPropagation?.(); store.selectCamera(camera.id); });
+      marker.on('click', event => { event?.originalEvent?.stopPropagation?.(); store.selectCamera(camera.id); onCameraSelect?.(camera.id); });
       const record = {group, marker, envelope: [], bands: [], centerline: null, interaction: null, labelVisible: labels.camera};
       record.interaction = createEntityMarkerInteraction({kind: 'camera', marker, store});
       marker.addTo(group); setLabel(record, 'camera', labels.camera); cameraLayers.set(camera.id, record);
@@ -147,7 +147,7 @@
     function syncTarget(target, state) {
       if (!target.position) { const existing = targetLayers.get(target.id); if (existing) { removeLayer(existing, 'line'); remove(existing.group); } return; }
       const record = ensureTarget(target), selected = state.uiState.selectedTargetId === target.id;
-      if (target.visible === false) { removeLayer(record, 'line'); remove(record.group); return; }
+      if (target.visible === false) { record.marker.options.draggable = false; record.marker.dragging?.disable?.(); removeLayer(record, 'line'); remove(record.group); return; }
       if (!map.hasLayer || !map.hasLayer(record.group)) record.group.addTo(map);
       const iconKey = targetIconKey(target, selected);
       record.marker.setLatLng(point(L, target.position)); record.marker.setTooltipContent?.(target.name || target.id); record.marker.setOpacity(target.enabled === false ? .45 : 1); if (record.iconKey !== iconKey) { record.marker.setIcon?.(targetIcon(target, selected)); record.iconKey = iconKey; } setLabel(record, 'target', labels.target);

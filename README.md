@@ -152,13 +152,13 @@ python -m unittest -v test_ray_cast_test.py
 
 ## Phase 3 App Shell 與核心工作區
 
-正式入口 [`index.html`](./index.html) 現在使用 [`app.css`](./app.css) 與 [`portcam-ui.js`](./portcam-ui.js) 投影桌面 App Shell：Top Bar、Camera Rail、Camera Inspector、Map Workspace、Result Drawer，以及預設收合的 Bottom Workspace。
+正式入口 [`index.html`](./index.html) 現在使用 [`app.css`](./app.css) 與 [`portcam-ui.js`](./portcam-ui.js) 投影桌面 App Shell：Top Bar、Object Manager、Context Inspector、Map Workspace，以及預設收合的 Bottom Workspace。
 
 - `PortCamUI.createAppController({store, mapController, root})` 負責 Store-driven DOM projection、panel state、responsive invalidation 與 cleanup；實際頁面以 `map`／Leaflet 建立既有 `PortCamMap` controller。
-- Store 的 `setPanelOpen`、`setActiveResultTab`、`setActiveWorkspaceTab` 是 UI-only，不進 `camera-project/1.0`、Undo/Redo 或 dirty state。
-- Camera Inspector 支援鍵盤座標定位、preview／blur／Enter commit、鎖定狀態、Derived FOV、Fit、Duplicate、Rename、Reset 與 selected Camera `camera-scene/1.1` export。
-- Result Drawer 支援 Target-only、visible、outside-FOV amber、disabled／draft／unavailable 與 failed 狀態；Target close 不清除 selection，Clear Target 才會清除。
-- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown` 與 tile zoom；Phase 3.1 已加入搜尋式 Target List 與獨立 labels 設定。Project Import／Save、Comparison table 與精確四角 ray 仍不在本階段。
+- Object Manager 是 Visible／Enabled／Locked 的唯一控制入口；其 Cameras／Targets tabs 均支援搜尋、選取、重新命名、Fit、複製與刪除。
+- Context Inspector 的 Details 顯示 focused entity，Observation 固定顯示獨立 selected Camera × Target pairing；`setActiveResultTab` 僅為相容性保留的 deprecated UI-only API。
+- Camera 與 Target 欄位都採 preview／blur／Enter single-commit；Target Details 在 preview 時保留 active input、捲動與 section 收合狀態。
+- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown`、tile zoom 與獨立 labels 設定。Project Import／Save、Comparison table 與精確四角 ray 仍不在本階段。
 
 ## Phase 3.1 共用 Entity、地圖互動與 Target List
 
@@ -173,6 +173,8 @@ python -m unittest -v test_ray_cast_test.py
 ## Phase 3.2 Unified Object Management UI
 
 左側 Object Manager 收斂 Cameras／Targets 表格；右側 Context Inspector 以 Details／Observation 顯示 focused entity 與 selected Camera × Target pairing。Bottom Workspace 僅保留 Phase 4 的 Comparison／YOLO placeholders。細節見 [`docs/PHASE_3_2_HANDOFF.md`](./docs/PHASE_3_2_HANDOFF.md)。
+
+2026-08-17 UI polish 移除 Top Bar Observation、Camera Open Result 與舊 Result Drawer DOM；Target 建立後自動切到 Observation。Target marker drag preview 不會重建作用中的 `L.divIcon`，只在 selected／locked／enabled 樣式改變時更新 icon。
 
 完整實際範圍、API、Node／browser evidence 與未完成人工 gate 見 [`docs/PHASE_3_HANDOFF.md`](./docs/PHASE_3_HANDOFF.md)。
 

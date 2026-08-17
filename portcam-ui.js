@@ -80,12 +80,13 @@
     let resizeObserver = null;
     let resizeTimer = null;
     let mapController = args.mapController || null;
+    let contextRenderKey = null;
     const labelVisibility = {camera: true, target: true};
 
     const els = {
       appShell: args.root && args.root.nodeType === 1 ? args.root : $('appShell'),
       cameraRailItems: $('cameraRailItems'), cameraSelect: $('cameraSelect'),
-      inspector: $('inspectorPanel'), resultDrawer: $('resultDrawer'),
+      inspector: $('inspectorPanel'),
       inspectorContent: $('inspectorContent'), resultContent: $('contextDynamicContent'), contextTabs: $('contextInspectorTabs'),
       resultTabs: null, workspace: $('bottomWorkspace'), workspaceContent: $('workspaceContent'), workspaceTabs: $('workspaceTabs'),
       projectName: $('projectName'), dirty: $('dirtyState'), undo: $('undoButton'), redo: $('redoButton'),
@@ -128,19 +129,18 @@
       store.setPanelOpen(panel, open);
       scheduleInvalidate();
     }
-    function openResult() { store.setInspectorTab?.('observation'); setPanel('inspector', true); }
-    function closeResult() { store.setInspectorTab?.('details'); }
-    function openInspector() { setPanel('inspector', true); }
+    function showInspector() { setPanel('inspector', true); }
+    function showDetails(kind, id) { store.setFocusedEntity(kind, id); store.setInspectorTab('details'); showInspector(); }
+    function showObservation() { store.setInspectorTab('observation'); showInspector(); }
     function closeInspector() { setPanel('inspector', false); }
     function renderPanelVisibility(state) {
       const panels = state.uiState.panelOpen || {};
       if (els.inspector) { els.inspector.classList.toggle('is-closed', panels.inspector === false); els.inspector.setAttribute('aria-hidden', panels.inspector === false ? 'true' : 'false'); }
-      if (els.resultDrawer) { els.resultDrawer.classList.toggle('is-closed', panels.result !== true); els.resultDrawer.setAttribute('aria-hidden', panels.result === true ? 'false' : 'true'); }
       if (els.mapSettingsPopover) els.mapSettingsPopover.hidden = panels.mapSettings !== true;
       if (els.workspace) els.workspace.classList.toggle('is-open', panels.workspace === true);
       if (els.mapSettingsToggle) els.mapSettingsToggle.setAttribute('aria-expanded', panels.mapSettings === true ? 'true' : 'false');
       if ($('workspaceToggle')) { $('workspaceToggle').setAttribute('aria-expanded', panels.workspace === true ? 'true' : 'false'); $('workspaceToggle').textContent = panels.workspace === true ? 'Collapse' : 'Expand'; }
-      if (els.appShell) { els.appShell.dataset.resultOpen = panels.result === true ? 'true' : 'false'; els.appShell.dataset.inspectorOpen = panels.inspector === true ? 'true' : 'false'; els.appShell.dataset.workspaceOpen = panels.workspace === true ? 'true' : 'false'; }
+      if (els.appShell) { els.appShell.dataset.inspectorOpen = panels.inspector === true ? 'true' : 'false'; els.appShell.dataset.workspaceOpen = panels.workspace === true ? 'true' : 'false'; }
     }
 
     function renderTopBar(state) {
@@ -163,7 +163,7 @@
           const color = doc.createElement('span'); color.className = 'camera-color'; color.style.backgroundColor = kind === 'camera' ? cameraColor(entity,state.cameraOrder) : '#fff'; item.appendChild(color);
           const name = doc.createElement('span'); name.className='camera-short-name'; name.textContent=entity.name||entity.id; item.appendChild(name);
           const pos = doc.createElement('span'); pos.className='rail-state'; pos.textContent=entity.position ? `${Number(entity.position.latitudeDeg).toFixed(3)}, ${Number(entity.position.longitudeDeg).toFixed(3)}` : 'Draft'; item.appendChild(pos);
-          const controls = doc.createElement('span'); controls.className='rail-state'; [['visible',entity.visible!==false,entity.visible!==false?'◉':'○'],['enabled',entity.enabled!==false,entity.enabled!==false?'✓':'×'],['locked',entity.locked,entity.locked?'🔒':'🔓'],['rename',false,'Rename'],['fit',false,'Fit'],['duplicate',false,'Copy'],['delete',false,'Delete']].forEach(([action,pressed,label]) => { const b=doc.createElement('button'); b.type='button'; b.className='rail-icon'; b.textContent=label; b.dataset.entityAction=action; b.dataset.entityKind=kind; b.dataset.entityId=entity.id; b.setAttribute('aria-pressed',pressed?'true':'false'); controls.appendChild(b); }); item.appendChild(controls); els.cameraRailItems.appendChild(item);
+          const controls = doc.createElement('span'); controls.className='rail-state'; [['visible',entity.visible!==false,entity.visible!==false?'◉':'○'],['enabled',entity.enabled!==false,entity.enabled!==false?'✓':'×'],['locked',entity.locked,entity.locked?'🔒':'🔓'],['rename',false,'Rename'],['fit',false,'Fit'],['duplicate',false,'Copy'],['delete',false,'Delete']].forEach(([action,pressed,label]) => { const b=doc.createElement('button'); const entityName=entity.name||entity.id; const actionLabel=action==='visible'?(pressed?'隱藏':'顯示'):action==='enabled'?(pressed?'停用':'啟用'):action==='locked'?(pressed?'解除鎖定':'鎖定'):label; b.type='button'; b.className='rail-icon'; b.textContent=label; b.dataset.entityAction=action; b.dataset.entityKind=kind; b.dataset.entityId=entity.id; b.setAttribute('aria-pressed',pressed?'true':'false'); b.setAttribute('aria-label',`${actionLabel} ${entityName}`); b.title=`${actionLabel} ${entityName}`; controls.appendChild(b); }); item.appendChild(controls); els.cameraRailItems.appendChild(item);
         });
         if (!els.cameraRailItems.children.length) { const empty=doc.createElement('div'); empty.className='rail-empty'; empty.textContent=`尚無符合的 ${kind}`; els.cameraRailItems.appendChild(empty); }
         const focused = Array.from(els.cameraRailItems.querySelectorAll('[data-entity-id]')).find(item => item.dataset.entityKind === state.uiState.focusedEntity?.kind && item.dataset.entityId === state.uiState.focusedEntity?.id); focused?.scrollIntoView?.({block:'nearest'});
@@ -189,8 +189,6 @@
       Object.entries(fields).forEach(([id, value]) => setValue($(id), value));
       const locked = !camera || camera.locked === true;
       ['cameraLat', 'cameraLng', 'sensorFormat', 'sensorW', 'sensorH', 'resolutionPreset', 'resW', 'resH', 'focal', 'camHeight', 'heading', 'tilt'].forEach(id => { const element = $(id); if (element) element.disabled = locked; });
-      setChecked($('cameraVisible'), camera && camera.visible !== false); setChecked($('cameraEnabled'), camera && camera.enabled !== false); setChecked($('cameraLocked'), camera && camera.locked === true);
-      ['cameraVisible', 'cameraEnabled', 'cameraLocked'].forEach(id => { const element = $(id); if (element) element.disabled = !camera; });
       const sensorKey = Object.keys(SENSOR_PRESETS).find(key => camera && Math.abs(camera.sensorWidthMm - SENSOR_PRESETS[key].w) < .001 && Math.abs(camera.sensorHeightMm - SENSOR_PRESETS[key].h) < .001);
       setValue($('sensorFormat'), sensorKey || 'custom');
       const resolutionKey = Object.keys(RESOLUTION_PRESETS).find(key => camera && camera.widthPx === RESOLUTION_PRESETS[key].w && camera.heightPx === RESOLUTION_PRESETS[key].h);
@@ -236,32 +234,15 @@
       setValue($('orientation'), state.settings.coverageTargetDimension || 'short');
       ['targetLat', 'targetLng', 'targetLong', 'targetShort', 'targetHeight', 'targetHeading'].forEach(id => { const element = $(id); if (element) element.disabled = Boolean(target?.locked); });
       if ($('createTarget')) $('createTarget').disabled = Boolean(target?.locked);
-      if ($('targetFormTitle')) $('targetFormTitle').textContent = target ? '編輯 selected Target' : '以座標建立 Target';
-      if ($('createTarget')) $('createTarget').textContent = target ? '套用 Target 變更' : '建立 Target';
+      if ($('targetFormTitle')) $('targetFormTitle').textContent = target ? 'Selected Target' : '尚未選取 Target';
+      if ($('createTarget')) $('createTarget').textContent = '建立 Target';
     }
-    function renderResult(state) {
-      const target = selectedTarget(state); const camera = selectedCamera(state);
-      renderTargetForm(target, state);
-      if ($('resultTitle')) $('resultTitle').textContent = target ? (target.name || 'Target') : 'Result Drawer';
-      if ($('resultSub')) $('resultSub').textContent = target ? (camera ? `${camera.name || 'Camera'} · Observation` : 'Target-only') : 'Target observation';
-      if (els.resultTabs) Array.from(els.resultTabs.querySelectorAll('[data-result-tab]')).forEach(tab => { tab.setAttribute('aria-selected', tab.dataset.resultTab === (state.uiState.activeResultTab || 'observation') ? 'true' : 'false'); });
-      if (!els.resultContent) return;
-      if (!target) {
-        els.resultContent.innerHTML = '<div class="result-state neutral"><strong>尚未選取 Target</strong>請使用地圖 Place Target，或在下方輸入座標建立 Target。</div><div id="targetFormMount"></div>';
-        mountTargetForm();
-        return;
-      }
-      const observation = camera ? store.getObservation(camera.id, target.id) : null;
-      const activeTab = state.uiState.activeResultTab || 'observation';
-      const body = activeTab === 'target' || !camera ? `<div class="result-state neutral"><strong>${escapeHtml(target.name || 'Target')}</strong>${camera ? 'Target 資料與操作。' : '目前沒有 selected Camera；Target 仍可獨立建立與編輯。'}</div>${targetMetricsMarkup(target)}` : observationMarkup(camera, target, observation, state);
-      els.resultContent.innerHTML = `${body}<div class="result-actions"><button type="button" class="action-button" id="fitTarget">Fit Target</button><button type="button" class="action-button" id="fitCameraTarget" ${camera ? '' : 'disabled'}>Fit Camera + Target</button><button type="button" class="action-button" id="renameTarget">Rename</button><button type="button" class="action-button danger" id="deleteTarget">Delete Target</button></div><div class="result-section-title">Target details</div><div id="targetFormMount"></div>`;
-      mountTargetForm();
-    }
-    function mountTargetForm() {
-      const mount = $('targetFormMount'); if (!mount) return;
-      const form = $('targetFormTemplate'); if (form) mount.appendChild(form.content.cloneNode(true));
-      const state = lastState || store.getState(); renderTargetForm(selectedTarget(state), state);
-    }
+    function targetPositionFieldsMarkup() { return '<div class="field-grid"><div class="field"><label class="field-label" for="targetLat">Latitude</label><input class="field-control" id="targetLat" type="number" step="0.000001" data-target-field="targetLat" /></div><div class="field"><label class="field-label" for="targetLng">Longitude</label><input class="field-control" id="targetLng" type="number" step="0.000001" data-target-field="targetLng" /></div><div class="field"><label class="field-label" for="targetHeading">Heading</label><input class="field-control" id="targetHeading" type="number" step="0.1" data-target-field="targetHeading" /></div><div class="field"><label class="field-label">Anchor</label><input class="field-control" value="bottom-center" readonly /></div></div>'; }
+    function targetDimensionFieldsMarkup() { return '<div class="field-grid"><div class="field"><label class="field-label" for="targetLong">Length</label><input class="field-control" id="targetLong" type="number" step="0.1" data-target-field="targetLong" /></div><div class="field"><label class="field-label" for="targetShort">Width</label><input class="field-control" id="targetShort" type="number" step="0.1" data-target-field="targetShort" /></div><div class="field"><label class="field-label" for="targetHeight">Visible height</label><input class="field-control" id="targetHeight" type="number" step="0.1" data-target-field="targetHeight" /></div><div class="field"><label class="field-label" for="orientation">Coverage reference</label><select class="field-control" id="orientation"><option value="short">short side / 船寬</option><option value="long">long side / 船長</option></select></div></div>'; }
+    function targetFieldsMarkup() { return `${targetPositionFieldsMarkup()}${targetDimensionFieldsMarkup()}`; }
+    function renderTargetCreation(state) { const key='target-create'; if (contextRenderKey !== key) { els.resultContent.innerHTML = `<div class="result-state neutral"><strong>尚未選取 Target</strong>請由 Object Manager 的 Add Target 放置，或輸入座標建立。</div><section class="panel-section">${targetFieldsMarkup()}<button class="action-button primary" id="createTarget" type="button" style="width:100%;margin-top:9px">建立 Target</button><div class="form-error" id="targetFormError"></div></section>`; contextRenderKey=key; } renderTargetForm(null,state); }
+    function renderTargetDetails(state, target) { const key=`target:${target.id}:details`; if (contextRenderKey !== key) { els.resultContent.innerHTML = `<section class="panel-section"><button class="section-toggle" data-section-toggle="target-position" aria-expanded="true">Position &amp; Orientation</button><div class="section-body" data-section-body="target-position">${targetPositionFieldsMarkup()}</div></section><section class="panel-section"><button class="section-toggle" data-section-toggle="target-dimensions" aria-expanded="true">Dimensions &amp; Coverage</button><div class="section-body" data-section-body="target-dimensions">${targetDimensionFieldsMarkup()}</div></section><section class="panel-section"><button class="section-toggle" data-section-toggle="target-actions" aria-expanded="true">Actions</button><div class="section-body" data-section-body="target-actions"><div class="inspector-actions"><button class="action-button" id="fitTarget">Fit Target</button><button class="action-button" id="duplicateTarget">Duplicate</button><button class="action-button" id="renameTarget">Rename</button><button class="action-button danger" id="deleteTarget">Delete</button></div><div class="tiny" id="targetLockedHint"></div></div></section>`; contextRenderKey=key; } renderTargetForm(target,state); if ($('targetLockedHint')) $('targetLockedHint').textContent=target.locked?'Target 已鎖定，請從 Object Manager 解除鎖定。':''; }
+    function renderObservation(state) { const camera=selectedCamera(state), target=selectedTarget(state), key='observation'; if(contextRenderKey!==key){els.resultContent.innerHTML='<div id="observationMount"></div>';contextRenderKey=key;} const mount=$('observationMount'); if(!mount)return; const observation=camera&&target?store.getObservation(camera.id,target.id):null; mount.innerHTML=`<div class="result-state neutral"><strong>${escapeHtml(camera?.name||'No Camera')} × ${escapeHtml(target?.name||'No Target')}</strong>目前 selected pairing。</div>${observationMarkup(camera,target,observation,state)}<div class="result-actions"><button class="action-button" id="fitTarget" ${target?'':'disabled'}>Fit Target</button><button class="action-button" id="fitCameraTarget" ${camera&&target?'':'disabled'}>Fit Camera + Target</button></div>`; }
     function targetObservationStatus(target, state) {
       const camera = selectedCamera(state);
       if (!camera) return {label: '無 selected Camera', className: 'neutral'};
@@ -311,24 +292,24 @@
       if (els.surfaceState) els.surfaceState.textContent = surfaceLoadState === 'ready' ? '已載入' : surfaceLoadState === 'failed' ? '無法判定' : '載入中';
       if (els.surfaceHelp) els.surfaceHelp.textContent = surfaceLoadState === 'ready' ? '關閉視覺圖層不會停用 water／land／unknown 點擊分類。' : surfaceLoadState === 'failed' ? '請用 localhost 啟動；既有地圖與 Camera 計算仍可使用。' : '固定 GeoJSON 載入中。';
     }
-    function renderContext(state) {
+    function renderContextInspector(state) {
       const focused = state.uiState.focusedEntity, observation = state.uiState.inspectorTab === 'observation';
       if (els.contextTabs) Array.from(els.contextTabs.querySelectorAll('[data-inspector-tab]')).forEach(tab => tab.setAttribute('aria-selected', tab.dataset.inspectorTab === (observation ? 'observation' : 'details') ? 'true' : 'false'));
       const showCameraDetails = !observation && focused?.kind === 'camera';
       if (els.inspectorContent) els.inspectorContent.hidden = !showCameraDetails;
       if (els.resultContent) els.resultContent.hidden = showCameraDetails;
-      if (showCameraDetails) { renderInspector(state); return; }
+      if (showCameraDetails) { contextRenderKey = null; renderInspector(state); return; }
       const target = focused?.kind === 'target' ? state.targetsById[focused.id] : selectedTarget(state);
       const camera = selectedCamera(state);
       if ($('cameraInspectorName')) $('cameraInspectorName').textContent = observation ? 'Observation' : (target?.name || 'Target');
       if ($('cameraInspectorSub')) $('cameraInspectorSub').textContent = observation ? 'Selected Camera × Target' : 'Focused Target';
       if ($('cameraLifecycle')) { $('cameraLifecycle').textContent = observation ? 'Pairing' : target?.locked ? 'Locked' : target?.enabled === false ? 'Disabled' : 'Target'; $('cameraLifecycle').className='status-badge'; }
-      renderResult({...state, uiState:{...state.uiState, activeResultTab: observation ? 'observation' : 'target'}});
+      if (observation) renderObservation(state); else if (target) renderTargetDetails(state, target); else renderTargetCreation(state);
     }
     function renderInteraction(state) {
       const mode = state.uiState.interactionMode;
       rootElement.querySelectorAll('[data-mode]').forEach(button => { const active = button.dataset.mode === mode; button.classList.toggle('active', active); button.setAttribute('aria-pressed', active ? 'true' : 'false'); });
-      if (els.instruction) { els.instruction.hidden = mode === 'navigate'; if (els.instructionText) els.instructionText.textContent = mode === 'place-camera' ? '請在地圖上點選 Camera 安裝位置；Escape 可取消。' : '請在地圖上點選 Target；完成後會開啟 Result Drawer。'; }
+      if (els.instruction) { els.instruction.hidden = mode === 'navigate'; if (els.instructionText) els.instructionText.textContent = mode === 'place-camera' ? '請在地圖上點選 Camera 安裝位置；Escape 可取消。' : '請在地圖上點選 Target；完成後會開啟 Context Inspector 的 Observation。'; }
       if (mode === 'navigate') setStatus(surfaceLoadState === 'failed' ? 'Navigate：水陸圖資無法載入，分類結果會保留 unknown。' : 'Navigate：選取 Camera 後可拖曳未鎖定 marker。');
     }
     function syncTileZoomOptions(state) {
@@ -389,19 +370,20 @@
       const latitude = position ? position.lat : num($('targetLat')?.value); const longitude = position ? position.lng : num($('targetLng')?.value); const lengthM = num($('targetLong')?.value); const widthM = num($('targetShort')?.value); const heightM = num($('targetHeight')?.value); const headingDeg = num($('targetHeading')?.value);
       if (![latitude, longitude, lengthM, widthM, heightM, headingDeg].every(value => value != null)) { setTargetError('請輸入有效的 latitude、longitude、尺寸與 heading。'); return null; }
       if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || lengthM <= 0 || widthM <= 0 || heightM <= 0) { setTargetError('座標必須在合法範圍，尺寸必須大於 0。'); return null; }
-      const state = store.getState(); const id = store.addTarget({name: `Target ${state.targetOrder.length + 1}`, position: {latitudeDeg: latitude, longitudeDeg: longitude}, lengthM, widthM, heightM, headingDeg, anchor: 'bottom-center', lifecycle: 'placed'}); store.selectTarget(id); store.setInteractionMode('navigate'); setTargetError(''); openResult(); return id;
+      const state = store.getState(); const id = store.addTarget({name: `Target ${state.targetOrder.length + 1}`, position: {latitudeDeg: latitude, longitudeDeg: longitude}, lengthM, widthM, heightM, headingDeg, anchor: 'bottom-center', lifecycle: 'placed'}); store.selectTarget(id); store.setInteractionMode('navigate'); setTargetError(''); showObservation(); return id;
     }
     function targetFormValuesForSelected() { return {latitudeDeg: num($('targetLat')?.value), longitudeDeg: num($('targetLng')?.value)}; }
 
     function handleMapClick(latlng) {
       const state = store.getState();
-      if (state.uiState.interactionMode === 'place-camera') { const id = state.uiState.selectedCameraId; if (id) { store.patchCamera(id, {position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}, lifecycle: 'placed'}, 'camera-place'); store.setInteractionMode('navigate'); openInspector(); } return; }
+      if (state.uiState.interactionMode === 'place-camera') { const id = state.uiState.selectedCameraId; if (id) { store.patchCamera(id, {position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}, lifecycle: 'placed'}, 'camera-place'); store.setInteractionMode('navigate'); showDetails('camera', id); } return; }
       if (state.uiState.interactionMode === 'place-target') createTarget(latlng);
     }
     function handleCameraDrag(id, latlng) { store.beginPreview('camera', id, {position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}}); store.commitPreview('camera-drag'); }
-    function handleTargetSelect(id) { store.setObjectManagerTab?.('targets'); store.setFocusedEntity?.('target', id); openInspector(); }
+    function handleCameraSelect(id) { store.setObjectManagerTab?.('cameras'); showDetails('camera', id); }
+    function handleTargetSelect(id) { store.setObjectManagerTab?.('targets'); showDetails('target', id); }
 
-    if (!mapController && map && L && MapApi) mapController = MapApi.createMapController({map, leaflet: L, store, onMapClick: handleMapClick, onTargetSelect: handleTargetSelect, labelVisibility});
+    if (!mapController && map && L && MapApi) mapController = MapApi.createMapController({map, leaflet: L, store, onMapClick: handleMapClick, onCameraSelect: handleCameraSelect, onTargetSelect: handleTargetSelect, labelVisibility});
     if (!mapController) throw new Error('PortCamUI requires mapController or map + Leaflet');
 
     function selectedObservation(state) { const camera = selectedCamera(state), target = selectedTarget(state); return camera && target ? store.getObservation(camera.id, target.id) : null; }
@@ -418,18 +400,17 @@
 
     function render(state) {
       if (destroyed) return;
-      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContext(state); renderWorkspace(state); renderMapSettings(state); renderInteraction(state); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(state);
+      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContextInspector(state); renderWorkspace(state); renderMapSettings(state); renderInteraction(state); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(state);
     }
     const unsubscribe = store.subscribe(render);
 
     function onCameraRailClick(event) {
       const action = event.target.closest?.('[data-entity-action]'), item = event.target.closest?.('[data-entity-id]');
       if (action) { event.stopPropagation(); const kind=action.dataset.entityKind, id=action.dataset.entityId, entity=kind==='camera'?store.getCamera(id):store.getTarget(id); if(!entity)return; const verb=action.dataset.entityAction; if(['visible','enabled','locked'].includes(verb)) return kind==='camera'?store.patchCamera(id,{[verb]:verb==='locked'?!entity.locked:!(entity[verb]!==false)},`${kind}-${verb}`):store.patchTarget(id,{[verb]:verb==='locked'?!entity.locked:!(entity[verb]!==false)},`${kind}-${verb}`); if(verb==='rename') { const name=view.prompt(`${kind} 名稱`,entity.name||kind); if(name&&name.trim()) return kind==='camera'?store.patchCamera(id,{name:name.trim()},`${kind}-rename`):store.patchTarget(id,{name:name.trim()},`${kind}-rename`); } if(verb==='fit') return kind==='camera'?mapController.fitCamera?.(id):mapController.fitTarget?.(id); if(verb==='duplicate') return kind==='camera'?store.duplicateCamera(id):store.duplicateTarget(id); if(verb==='delete'&&view.confirm(`刪除 ${entity.name||id}？`)) return kind==='camera'?store.removeCamera(id):store.removeTarget(id); }
-      if (item) { store.cancelPreview(); store.setFocusedEntity(item.dataset.entityKind, item.dataset.entityId); openInspector(); }
+      if (item) { store.cancelPreview(); if (item.dataset.entityKind === 'camera') store.selectCamera(item.dataset.entityId); else store.selectTarget(item.dataset.entityId); showDetails(item.dataset.entityKind, item.dataset.entityId); }
     }
-    function onCameraRailKeydown(event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-entity-id]')) { event.preventDefault(); store.cancelPreview(); store.setFocusedEntity(event.target.dataset.entityKind,event.target.dataset.entityId); openInspector(); } }
-    function onResultClick(event) { const tab = event.target.closest?.('[data-result-tab]'); if (tab) { store.setActiveResultTab(tab.dataset.resultTab); return; } const id = event.target.id; const state = store.getState(); const target = selectedTarget(state); const camera = selectedCamera(state); if (id === 'closeResultDrawer') return closeResult(); if (id === 'clearTarget') { store.selectTarget(null); closeResult(); return; } if (!target) return; if (id === 'fitTarget') return mapController.fitTarget?.(target.id); if (id === 'fitCameraTarget') return camera && mapController.fitCameraAndTarget?.(camera.id, target.id); if (id === 'renameTarget') { const next = view.prompt('Target 名稱', target.name || 'Target'); if (next && next.trim()) store.patchTarget(target.id, {name: next.trim()}, 'target-rename'); return; } if (id === 'deleteTarget' && view.confirm(`刪除 ${target.name || target.id}？`)) { store.removeTarget(target.id); if (store.getState().uiState.selectedTargetId) openResult(); else closeResult(); } }
-    function onInspectorClick(event) { const button = event.target.closest?.('button'); if (!button) return; const id = button.id; const state = store.getState(); const camera = selectedCamera(state); if (id === 'closeInspector') return closeInspector(); if (id === 'openResult' || id === 'openResultFromInspector') return openResult(); if (id === 'relocateCamera') { if (camera && !camera.locked) store.setInteractionMode('place-camera'); return; } if (id === 'fitCamera') return camera && mapController.fitCamera?.(camera.id); if (id === 'fitFov') return camera && mapController.fitCameraFov?.(camera.id); if (id === 'duplicateCamera') { if (camera) store.duplicateCamera(camera.id); return; } if (id === 'renameCamera') { if (camera) { const next = view.prompt('Camera 名稱', camera.name || 'Camera'); if (next && next.trim()) store.patchCamera(camera.id, {name: next.trim()}, 'camera-rename'); } return; } if (id === 'deleteCamera') { if (camera && view.confirm(`刪除 ${camera.name || camera.id}？`)) store.removeCamera(camera.id); return; } if (id === 'resetCamera') { if (camera && !camera.locked) store.patchCamera(camera.id, {...DEFAULT_CAMERA}, 'camera-reset'); return; } if (id === 'downloadCameraScene') return downloadScene(); if (id === 'copyCameraScene') return copyScene(); }
+    function onCameraRailKeydown(event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-entity-id]')) { event.preventDefault(); store.cancelPreview(); if (event.target.dataset.entityKind === 'camera') store.selectCamera(event.target.dataset.entityId); else store.selectTarget(event.target.dataset.entityId); showDetails(event.target.dataset.entityKind,event.target.dataset.entityId); } }
+    function onInspectorClick(event) { const button = event.target.closest?.('button'); if (!button) return; const id = button.id; const state = store.getState(); const camera = selectedCamera(state), target = selectedTarget(state); if (id === 'closeInspector') return closeInspector(); if (id === 'relocateCamera') { if (camera && !camera.locked) store.setInteractionMode('place-camera'); return; } if (id === 'fitCamera') return camera && mapController.fitCamera?.(camera.id); if (id === 'fitFov') return camera && mapController.fitCameraFov?.(camera.id); if (id === 'duplicateCamera') { if (camera) { store.duplicateCamera(camera.id); store.setInspectorTab('details'); } return; } if (id === 'renameCamera') { if (camera) { const next = view.prompt('Camera 名稱', camera.name || 'Camera'); if (next && next.trim()) store.patchCamera(camera.id, {name: next.trim()}, 'camera-rename'); } return; } if (id === 'deleteCamera') { if (camera && view.confirm(`刪除 ${camera.name || camera.id}？`)) store.removeCamera(camera.id); return; } if (id === 'resetCamera') { if (camera && !camera.locked) store.patchCamera(camera.id, {...DEFAULT_CAMERA}, 'camera-reset'); return; } if (id === 'fitTarget') return target && mapController.fitTarget?.(target.id); if (id === 'fitCameraTarget') return camera && target && mapController.fitCameraAndTarget?.(camera.id,target.id); if (id === 'duplicateTarget') { if (target) { store.duplicateTarget(target.id); store.setInspectorTab('details'); } return; } if (id === 'renameTarget') { if (target) { const next=view.prompt('Target 名稱',target.name||'Target'); if(next&&next.trim())store.patchTarget(target.id,{name:next.trim()},'target-rename'); } return; } if (id === 'deleteTarget' && target && view.confirm(`刪除 ${target.name||target.id}？`)) { store.removeTarget(target.id); store.setInspectorTab('details'); return; } if (id === 'downloadCameraScene') return downloadScene(); if (id === 'copyCameraScene') return copyScene(); }
     function onShellClick(event) {
       const modeButton = event.target.closest?.('[data-mode]');
       if (modeButton) { store.setInteractionMode(modeButton.dataset.mode); return; }
@@ -440,37 +421,24 @@
       const inspectorTab = event.target.closest?.('[data-inspector-tab]'); if (inspectorTab) { store.setInspectorTab(inspectorTab.dataset.inspectorTab); return; }
       const workspaceTab = event.target.closest?.('[data-workspace-tab]');
       if (workspaceTab) { store.setActiveWorkspaceTab(workspaceTab.dataset.workspaceTab); return; }
-      const targetAction = event.target.closest?.('[data-target-action]');
-      if (targetAction) {
-        event.stopPropagation();
-        const id = targetAction.dataset.targetId, target = store.getTarget(id); if (!target) return;
-        const action = targetAction.dataset.targetAction;
-        if (action === 'fit') return mapController.fitTarget?.(id);
-        if (action === 'duplicate') { store.duplicateTarget(id); return; }
-        if (action === 'delete') { if (view.confirm(`刪除 ${target.name || id}？`)) { store.removeTarget(id); if (!store.getState().uiState.selectedTargetId) closeResult(); } return; }
-        if (action === 'rename') { const next = view.prompt('Target 名稱', target.name || 'Target'); if (next && next.trim()) store.patchTarget(id, {name: next.trim()}, 'target-rename'); return; }
-        if (['visible', 'enabled', 'locked'].includes(action)) { store.patchTarget(id, {[action]: action === 'locked' ? !target.locked : !(target[action] !== false)}, `target-${action}`); return; }
-      }
-      const targetRow = event.target.closest?.('[data-target-row-id]');
-      if (targetRow) { store.cancelPreview(); store.selectTarget(targetRow.dataset.targetRowId); openResult(); return; }
       if (event.target.closest?.('#workspaceToggle')) { setPanel('workspace', !(store.getState().uiState.panelOpen.workspace)); return; }
       if (event.target.closest?.('#mapSettingsToggle') || event.target.closest?.('#openProjectSettings')) { setPanel('mapSettings', !(store.getState().uiState.panelOpen.mapSettings)); return; }
       if (event.target.closest?.('#closeMapSettings')) { setPanel('mapSettings', false); return; }
     }
     function onGlobalClick(event) { if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
-    function onKeydown(event) { if (event.key !== 'Escape') return; const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { mapController.cancelInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); if (state.uiState.panelOpen.result) return closeResult(); const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
+    function onKeydown(event) { if (event.key !== 'Escape') return; const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { mapController.cancelInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
     function onInput(event) { const element = event.target; if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
-    function onChange(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'cameraVisible' || element.id === 'cameraEnabled' || element.id === 'cameraLocked') { const field = {cameraVisible: 'visible', cameraEnabled: 'enabled', cameraLocked: 'locked'}[element.id]; const id = selectedCameraId(); if (id) store.patchCamera(id, {[field]: element.checked}, `camera-${field}`); } if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
+    function onChange(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
-    function onEnter(event) { if (event.key === 'Enter') { const element = event.target; if (element.matches?.('[data-target-row-id]')) { event.preventDefault(); store.selectTarget(element.dataset.targetRowId); openResult(); return; } if (element.dataset.cameraField) { event.preventDefault(); commitCameraField(element.dataset.cameraField); } if (element.dataset.targetField) { event.preventDefault(); commitTargetField(element.dataset.targetField); } } }
-    function onFormClick(event) { if (event.target.id === 'createTarget') { const target = selectedTarget(); if (target) { const fields = ['targetLat', 'targetLng', 'targetLong', 'targetShort', 'targetHeight', 'targetHeading']; const patch = {}; fields.forEach(field => Object.assign(patch, targetPatchForField(field) || {})); store.cancelPreview(); if (Object.keys(patch).length) store.patchTarget(target.id, patch, 'target-form'); if (patch.heightM != null) store.patchSettings({planningTargetHeightM: patch.heightM}, 'target-height-setting'); setTargetError(''); openResult(); } else createTarget(); } }
+    function onEnter(event) { if (event.key === 'Enter') { const element = event.target; if (element.dataset.cameraField) { event.preventDefault(); commitCameraField(element.dataset.cameraField); } if (element.dataset.targetField) { event.preventDefault(); commitTargetField(element.dataset.targetField); } } }
+    function onFormClick(event) { if (event.target.id === 'createTarget') createTarget(); }
 
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
-    listen(els.inspector, 'click', onInspectorClick); listen(els.resultDrawer, 'click', onResultClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
-    listen($('addCamera'), 'click', () => { const state = store.getState(); const id = store.addCamera({name: `Camera ${state.cameraOrder.length + 1}`, lifecycle: 'draft-unplaced', visible: true, enabled: true, locked: false, ...DEFAULT_CAMERA}); store.selectCamera(id); store.setInteractionMode('place-camera'); openInspector(); });
+    listen(els.inspector, 'click', onInspectorClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
+    listen($('addCamera'), 'click', () => { const state = store.getState(); const id = store.addCamera({name: `Camera ${state.cameraOrder.length + 1}`, lifecycle: 'draft-unplaced', visible: true, enabled: true, locked: false, ...DEFAULT_CAMERA}); store.selectCamera(id); store.setInteractionMode('place-camera'); showDetails('camera', id); });
     listen($('addTargetManager'), 'click', () => { store.setInteractionMode('place-target'); store.setObjectManagerTab('targets'); });
-    listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo()); listen($('openInspector'), 'click', openInspector); listen($('openResult'), 'click', openResult); listen($('clearTarget'), 'click', () => { store.selectTarget(null); closeResult(); }); listen($('createTarget'), 'click', onFormClick); listen($('downloadCameraScene'), 'click', downloadScene); listen($('copyCameraScene'), 'click', copyScene);
-    if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); if (els.resultDrawer) resizeObserver.observe(els.resultDrawer); }
+    listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo()); listen($('openInspector'), 'click', showInspector); listen($('createTarget'), 'click', onFormClick); listen($('downloadCameraScene'), 'click', downloadScene); listen($('copyCameraScene'), 'click', copyScene);
+    if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); }
     listen(view, 'resize', scheduleInvalidate);
     loadSurface();
     render(store.getState());

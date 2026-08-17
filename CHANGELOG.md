@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 3.2 UI polish — 2026-08-17
+
+- Removed the visible and hidden legacy Result Drawer paths. Context Inspector is now the sole Details／Observation surface; Target creation opens its Observation pairing.
+- Made Object Manager the only Visible／Enabled／Locked control surface, with action-specific accessible labels and titles.
+- Rebuilt Target Details as stable collapsible Position & Orientation, Dimensions & Coverage, and Actions sections; preview updates fields in place.
+- Strengthened Target drag regression coverage so repeated previews and the single drag commit do not call `marker.setIcon()`; selected／locked／enabled styles remain the only icon replacement triggers.
+
 ## Phase 3.2 — 2026-08-16
 
 - Consolidated Camera Rail and Target List into Object Manager tabs and merged the visible inspector/drawer experience into Context Inspector Details/Observation.

@@ -34,13 +34,18 @@ test('Camera and Target share one drag preview/commit contract and map projectio
   assert.equal(cameraMarker.options.bubblingMouseEvents, false); assert.equal(targetMarker.options.bubblingMouseEvents, false);
   assert.equal(targetMarker.options.draggable, true); assert.equal(controller.getTargetLayerSnapshot('t').markerType, 'Marker'); assert.equal(controller.getTargetLayerSnapshot('t').linePresent, true);
   const before = store.getState(), iconCallsBeforeDrag = targetMarker.setIconCalls;
-  targetMarker.events.dragstart(); targetMarker.setLatLng({lat:22.605,lng:120.285}); targetMarker.events.drag({target:targetMarker});
+  targetMarker.events.dragstart(); targetMarker.setLatLng({lat:22.603,lng:120.283}); targetMarker.events.drag({target:targetMarker}); targetMarker.setLatLng({lat:22.605,lng:120.285}); targetMarker.events.drag({target:targetMarker});
   let preview = store.getState(); assert.equal(preview.preview.kind, 'target'); assert.equal(preview.targetsById.t.revision, before.targetsById.t.revision); assert.equal(preview.history.length, before.history.length); assert.equal(preview.dirty, before.dirty); assert.equal(targetMarker.setIconCalls, iconCallsBeforeDrag);
   targetMarker.events.dragend();
-  const committed = store.getState(); assert.equal(committed.preview, null); assert.equal(committed.targetsById.t.revision, before.targetsById.t.revision + 1); assert.equal(committed.history.length, before.history.length + 1); assert.equal(controller.getTargetLayerSnapshot('t').markerPosition.lat, 22.605);
+  const committed = store.getState(); assert.equal(committed.preview, null); assert.equal(committed.targetsById.t.revision, before.targetsById.t.revision + 1); assert.equal(committed.history.length, before.history.length + 1); assert.equal(targetMarker.setIconCalls, iconCallsBeforeDrag); assert.equal(controller.getTargetLayerSnapshot('t').markerPosition.lat, 22.605);
   store.undo(); assert.equal(controller.getTargetLayerSnapshot('t').markerPosition.lat, 22.601); store.redo(); assert.equal(controller.getTargetLayerSnapshot('t').markerPosition.lat, 22.605);
   const fov = map.layers.values().next().value.layers; const geometry = [...fov].filter(layer => layer.options?.pane === 'portcam-analysis-pane'); assert.ok(geometry.length > 0); assert.ok(geometry.every(layer => layer.options.interactive === false));
-  store.patchTarget('t', {locked:true}); assert.equal(targetMarker.options.draggable, false); store.patchTarget('t', {locked:false, visible:false}); assert.equal(targetMarker.options.draggable, false); store.patchTarget('t', {visible:true}); store.selectTarget(null); assert.equal(targetMarker.options.draggable, false);
+  const iconCallsBeforeStyleChange = targetMarker.setIconCalls;
+  store.patchTarget('t', {locked:true}); assert.equal(targetMarker.options.draggable, false); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 1);
+  store.patchTarget('t', {locked:false}); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 2);
+  store.patchTarget('t', {visible:false}); assert.equal(targetMarker.options.draggable, false); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 2);
+  store.patchTarget('t', {visible:true, enabled:false}); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 3);
+  store.selectTarget(null); assert.equal(targetMarker.options.draggable, false); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 4);
   controller.destroy();
 });
 
