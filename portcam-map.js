@@ -132,13 +132,14 @@
       const classes = ['target-marker']; if (selected) classes.push('is-selected'); if (target.locked) classes.push('is-locked'); if (target.enabled === false) classes.push('is-disabled');
       return L.divIcon({className: 'entity-marker-wrapper', html: `<span class="${classes.join(' ')}" aria-hidden="true"></span>`, iconSize: [26, 26], iconAnchor: [13, 13]});
     }
+    function targetIconKey(target, selected) { return `${selected ? 1 : 0}:${target.locked ? 1 : 0}:${target.enabled === false ? 1 : 0}`; }
     function ensureTarget(target) {
       if (targetLayers.has(target.id)) return targetLayers.get(target.id);
       const group = layerGroup();
       const marker = L.marker(point(L, target.position), {draggable: false, pane: PANE_NAMES.target, bubblingMouseEvents: false, icon: targetIcon(target, false)}).bindTooltip(target.name || target.id, entityTooltip());
       marker.__portcamEntityId = target.id;
       marker.on('click', event => { event?.originalEvent?.stopPropagation?.(); store.selectTarget(target.id); onTargetSelect?.(target.id); });
-      const record = {group, marker, line: null, interaction: null, labelVisible: labels.target};
+      const record = {group, marker, line: null, interaction: null, labelVisible: labels.target, iconKey: targetIconKey(target, false)};
       record.interaction = createEntityMarkerInteraction({kind: 'target', marker, store});
       marker.addTo(group); setLabel(record, 'target', labels.target); targetLayers.set(target.id, record);
       return record;
@@ -148,7 +149,8 @@
       const record = ensureTarget(target), selected = state.uiState.selectedTargetId === target.id;
       if (target.visible === false) { removeLayer(record, 'line'); remove(record.group); return; }
       if (!map.hasLayer || !map.hasLayer(record.group)) record.group.addTo(map);
-      record.marker.setLatLng(point(L, target.position)); record.marker.setTooltipContent?.(target.name || target.id); record.marker.setOpacity(target.enabled === false ? .45 : 1); record.marker.setIcon?.(targetIcon(target, selected)); setLabel(record, 'target', labels.target);
+      const iconKey = targetIconKey(target, selected);
+      record.marker.setLatLng(point(L, target.position)); record.marker.setTooltipContent?.(target.name || target.id); record.marker.setOpacity(target.enabled === false ? .45 : 1); if (record.iconKey !== iconKey) { record.marker.setIcon?.(targetIcon(target, selected)); record.iconKey = iconKey; } setLabel(record, 'target', labels.target);
       const canDrag = selected && target.visible !== false && target.locked !== true && state.uiState.interactionMode === 'navigate';
       record.marker.options.draggable = canDrag;
       if (record.marker.dragging) canDrag ? record.marker.dragging.enable() : record.marker.dragging.disable();
