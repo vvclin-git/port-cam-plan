@@ -366,18 +366,31 @@
     function commitTargetField(field) { const id = selectedTargetId(); if (!id) return; const patch = targetPatchForField(field); if (!patch) { setTargetError(`${field} 必須是有限數值。`); return; } const state = store.getState(); if (state.preview?.kind === 'target' && state.preview.id === id) store.commitPreview(`target-${field}`); else store.patchTarget(id, patch, `target-${field}`); if (field === 'targetHeight') store.patchSettings({planningTargetHeightM: patch.heightM}, 'target-height-setting'); }
     function previewTargetField(field) { const id = selectedTargetId(); const patch = targetPatchForField(field); if (id && patch) store.beginPreview('target', id, patch); }
     function setTargetError(message) { const targetError = els.targetFormError || $('targetFormError'); if (targetError) targetError.textContent = message || ''; }
-    function createTarget(position) {
-      const latitude = position ? position.lat : num($('targetLat')?.value); const longitude = position ? position.lng : num($('targetLng')?.value); const lengthM = num($('targetLong')?.value); const widthM = num($('targetShort')?.value); const heightM = num($('targetHeight')?.value); const headingDeg = num($('targetHeading')?.value);
+    function addTargetFromDraft(targetDraft) {
+      const state = store.getState();
+      const id = store.addTarget({name: `Target ${state.targetOrder.length + 1}`, anchor: 'bottom-center', lifecycle: 'placed', visible: true, enabled: true, locked: false, ...targetDraft});
+      store.selectTarget(id);
+      store.setInteractionMode('navigate');
+      setTargetError('');
+      showObservation();
+      return id;
+    }
+    function createTargetFromForm() {
+      const latitude = num($('targetLat')?.value); const longitude = num($('targetLng')?.value); const lengthM = num($('targetLong')?.value); const widthM = num($('targetShort')?.value); const heightM = num($('targetHeight')?.value); const headingDeg = num($('targetHeading')?.value);
       if (![latitude, longitude, lengthM, widthM, heightM, headingDeg].every(value => value != null)) { setTargetError('請輸入有效的 latitude、longitude、尺寸與 heading。'); return null; }
       if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || lengthM <= 0 || widthM <= 0 || heightM <= 0) { setTargetError('座標必須在合法範圍，尺寸必須大於 0。'); return null; }
-      const state = store.getState(); const id = store.addTarget({name: `Target ${state.targetOrder.length + 1}`, position: {latitudeDeg: latitude, longitudeDeg: longitude}, lengthM, widthM, heightM, headingDeg, anchor: 'bottom-center', lifecycle: 'placed'}); store.selectTarget(id); store.setInteractionMode('navigate'); setTargetError(''); showObservation(); return id;
+      return addTargetFromDraft({position: {latitudeDeg: latitude, longitudeDeg: longitude}, lengthM, widthM, heightM, headingDeg});
+    }
+    function createTargetFromMap(latlng) {
+      const state = store.getState();
+      return addTargetFromDraft({position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}, lengthM: 5, widthM: 2, heightM: state.settings.planningTargetHeightM || 2, headingDeg: 0});
     }
     function targetFormValuesForSelected() { return {latitudeDeg: num($('targetLat')?.value), longitudeDeg: num($('targetLng')?.value)}; }
 
     function handleMapClick(latlng) {
       const state = store.getState();
       if (state.uiState.interactionMode === 'place-camera') { const id = state.uiState.selectedCameraId; if (id) { store.patchCamera(id, {position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}, lifecycle: 'placed'}, 'camera-place'); store.setInteractionMode('navigate'); showDetails('camera', id); } return; }
-      if (state.uiState.interactionMode === 'place-target') createTarget(latlng);
+      if (state.uiState.interactionMode === 'place-target') createTargetFromMap(latlng);
     }
     function handleCameraDrag(id, latlng) { store.beginPreview('camera', id, {position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}}); store.commitPreview('camera-drag'); }
     function handleCameraSelect(id) { store.setObjectManagerTab?.('cameras'); showDetails('camera', id); }
@@ -431,13 +444,13 @@
     function onChange(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
     function onEnter(event) { if (event.key === 'Enter') { const element = event.target; if (element.dataset.cameraField) { event.preventDefault(); commitCameraField(element.dataset.cameraField); } if (element.dataset.targetField) { event.preventDefault(); commitTargetField(element.dataset.targetField); } } }
-    function onFormClick(event) { if (event.target.id === 'createTarget') createTarget(); }
+    function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); }
 
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
     listen(els.inspector, 'click', onInspectorClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
     listen($('addCamera'), 'click', () => { const state = store.getState(); const id = store.addCamera({name: `Camera ${state.cameraOrder.length + 1}`, lifecycle: 'draft-unplaced', visible: true, enabled: true, locked: false, ...DEFAULT_CAMERA}); store.selectCamera(id); store.setInteractionMode('place-camera'); showDetails('camera', id); });
-    listen($('addTargetManager'), 'click', () => { store.setInteractionMode('place-target'); store.setObjectManagerTab('targets'); });
-    listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo()); listen($('openInspector'), 'click', showInspector); listen($('createTarget'), 'click', onFormClick); listen($('downloadCameraScene'), 'click', downloadScene); listen($('copyCameraScene'), 'click', copyScene);
+    listen($('addTargetManager'), 'click', () => { store.setInteractionMode('place-target'); });
+    listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo()); listen($('openInspector'), 'click', showInspector);
     if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); }
     listen(view, 'resize', scheduleInvalidate);
     loadSurface();

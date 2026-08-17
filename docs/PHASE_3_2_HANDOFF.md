@@ -1,5 +1,13 @@
 # Phase 3.2 Handoff
 
+## Export and continuous Target creation bugfix — 2026-08-17
+
+- Baseline was clean at `478f003` (`Polish Phase 3.2 object management UI`) with 23/23 Node tests passing.
+- Removed the direct `downloadCameraScene` and `copyCameraScene` listeners. Context Inspector event delegation is now the only export trigger, so one click creates one Blob URL/download link or one clipboard write; the Blob URL is still revoked after download.
+- Split Target creation into `createTargetFromForm()`, `createTargetFromMap(latlng)`, and `addTargetFromDraft(targetDraft)`. Map placement no longer reads Context Inspector inputs and always uses the documented default dimensions, state flags, anchor, and lifecycle.
+- Add Target now only enters `place-target`, preserving the existing Camera/Target selection and focus until the map click. Each map placement adds one history entry, selects/focuses the new Target, returns to navigate, and opens Observation.
+- Edge smoke counted single and double export/copy clicks, created three consecutive Targets while Observation was open, cancelled a fourth placement, then undid/redid the three adds without console errors. Screenshot: `output/playwright/phase32-export-target-bugfix.png`.
+
 ## UI polish — 2026-08-17
 
 - Baseline was clean at `b523d1d` (`Fix Target marker drag preview`); the original Phase 3.2 UI commit is `250fe71`.
