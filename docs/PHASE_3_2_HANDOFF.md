@@ -1,5 +1,12 @@
 # Phase 3.2 Handoff
 
+## Object Manager row hierarchy and overflow — 2026-08-18
+
+- Baseline was clean at `e9d19fc` (`Fix scene export and repeated target placement`). This UI polish is intentionally uncommitted and was not pushed.
+- Camera and Target rows now share a 64px two-line grid: identity marker, ellipsized name and overflow button on the first line; position plus Visible／Enabled／Locked controls on the second line. Target uses a compact crosshair identity instead of a white dot.
+- Rename, Fit on map, Duplicate, and Delete moved into a single fixed body-level overflow popover. It is keyboard tabbable; closes on outside click, Escape (returning focus), row/tab change, action, and list scroll; it uses no Store state and therefore remains UI-only.
+- Edge smoke added 30 long-name Targets, verified stable row heights and no horizontal list scroll, checked row keyboard selection and non-selecting status controls, exercised overflow open/close, tab-close, Duplicate, and ran at 100% and DPR 2. Screenshot: `output/playwright/object-manager-row-narrow.png`.
+
 ## Export and continuous Target creation bugfix — 2026-08-17
 
 - Baseline was clean at `478f003` (`Polish Phase 3.2 object management UI`) with 23/23 Node tests passing.

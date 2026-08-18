@@ -81,6 +81,7 @@
     let resizeTimer = null;
     let mapController = args.mapController || null;
     let contextRenderKey = null;
+    let overflowMenu = null;
     const labelVisibility = {camera: true, target: true};
 
     const els = {
@@ -151,6 +152,7 @@
     }
 
     function renderRail(state) {
+      if (overflowMenu) closeOverflowMenu();
       const managerKind = state.uiState.objectManagerTab === 'targets' ? 'targets' : 'cameras';
       Array.from($('objectManagerTabs')?.querySelectorAll?.('[data-manager-tab]') || []).forEach(tab => tab.setAttribute('aria-selected', tab.dataset.managerTab === managerKind ? 'true' : 'false'));
       setValue($('objectManagerSearch'), managerKind === 'cameras' ? state.uiState.cameraSearchQuery : state.uiState.targetSearchQuery);
@@ -160,10 +162,13 @@
         const kind = state.uiState.objectManagerTab === 'targets' ? 'target' : 'camera', order = kind === 'camera' ? state.cameraOrder : state.targetOrder, table = kind === 'camera' ? state.camerasById : state.targetsById, query = String(kind === 'camera' ? state.uiState.cameraSearchQuery : state.uiState.targetSearchQuery || '').toLowerCase();
         order.map(id => table[id]).filter(Boolean).filter(entity => !query || `${entity.name} ${entity.position?.latitudeDeg || ''} ${entity.position?.longitudeDeg || ''}`.toLowerCase().includes(query)).forEach(entity => {
           const item = doc.createElement('div'); item.className = 'camera-rail-item manager-row'; item.tabIndex = 0; item.setAttribute('role','button'); item.dataset.entityKind = kind; item.dataset.entityId = entity.id; item.setAttribute('aria-current', state.uiState.focusedEntity?.kind === kind && state.uiState.focusedEntity.id === entity.id ? 'true':'false');
-          const color = doc.createElement('span'); color.className = 'camera-color'; color.style.backgroundColor = kind === 'camera' ? cameraColor(entity,state.cameraOrder) : '#fff'; item.appendChild(color);
-          const name = doc.createElement('span'); name.className='camera-short-name'; name.textContent=entity.name||entity.id; item.appendChild(name);
-          const pos = doc.createElement('span'); pos.className='rail-state'; pos.textContent=entity.position ? `${Number(entity.position.latitudeDeg).toFixed(3)}, ${Number(entity.position.longitudeDeg).toFixed(3)}` : 'Draft'; item.appendChild(pos);
-          const controls = doc.createElement('span'); controls.className='rail-state'; [['visible',entity.visible!==false,entity.visible!==false?'◉':'○'],['enabled',entity.enabled!==false,entity.enabled!==false?'✓':'×'],['locked',entity.locked,entity.locked?'🔒':'🔓'],['rename',false,'Rename'],['fit',false,'Fit'],['duplicate',false,'Copy'],['delete',false,'Delete']].forEach(([action,pressed,label]) => { const b=doc.createElement('button'); const entityName=entity.name||entity.id; const actionLabel=action==='visible'?(pressed?'隱藏':'顯示'):action==='enabled'?(pressed?'停用':'啟用'):action==='locked'?(pressed?'解除鎖定':'鎖定'):label; b.type='button'; b.className='rail-icon'; b.textContent=label; b.dataset.entityAction=action; b.dataset.entityKind=kind; b.dataset.entityId=entity.id; b.setAttribute('aria-pressed',pressed?'true':'false'); b.setAttribute('aria-label',`${actionLabel} ${entityName}`); b.title=`${actionLabel} ${entityName}`; controls.appendChild(b); }); item.appendChild(controls); els.cameraRailItems.appendChild(item);
+          const identity = doc.createElement('span'); identity.className = kind === 'camera' ? 'camera-color' : 'target-row-identity'; if (kind === 'camera') identity.style.backgroundColor = cameraColor(entity,state.cameraOrder); item.appendChild(identity);
+          const top = doc.createElement('span'); top.className='manager-row-top';
+          const name = doc.createElement('span'); name.className='camera-short-name'; name.textContent=entity.name||entity.id; name.title=entity.name||entity.id; top.appendChild(name);
+          const overflow = doc.createElement('button'); const overflowId=`manager-overflow-${kind}-${encodeURIComponent(entity.id)}`; overflow.type='button'; overflow.className='rail-icon manager-overflow-button'; overflow.textContent='…'; overflow.dataset.entityOverflow='true'; overflow.dataset.entityKind=kind; overflow.dataset.entityId=entity.id; overflow.setAttribute('aria-label',`${entity.name || entity.id} 的更多操作`); overflow.title=`${entity.name || entity.id} 的更多操作`; overflow.setAttribute('aria-expanded','false'); overflow.setAttribute('aria-controls',overflowId); top.appendChild(overflow); item.appendChild(top);
+          const bottom = doc.createElement('span'); bottom.className='manager-row-bottom';
+          const pos = doc.createElement('span'); pos.className='rail-state manager-position'; pos.textContent=entity.position ? `${Number(entity.position.latitudeDeg).toFixed(3)}, ${Number(entity.position.longitudeDeg).toFixed(3)}` : 'Draft'; bottom.appendChild(pos);
+          const controls = doc.createElement('span'); controls.className='manager-status-controls'; [['visible',entity.visible!==false,entity.visible!==false?'◉':'○'],['enabled',entity.enabled!==false,entity.enabled!==false?'✓':'×'],['locked',entity.locked,entity.locked?'🔒':'🔓']].forEach(([action,pressed,label]) => { const b=doc.createElement('button'); const entityName=entity.name||entity.id; const actionLabel=action==='visible'?(pressed?'隱藏':'顯示'):action==='enabled'?(pressed?'停用':'啟用'):pressed?'解除鎖定':'鎖定'; b.type='button'; b.className='rail-icon'; b.textContent=label; b.dataset.entityAction=action; b.dataset.entityKind=kind; b.dataset.entityId=entity.id; b.setAttribute('aria-pressed',pressed?'true':'false'); b.setAttribute('aria-label',`${actionLabel} ${entityName}`); b.title=`${actionLabel} ${entityName}`; controls.appendChild(b); }); bottom.appendChild(controls); item.appendChild(bottom); els.cameraRailItems.appendChild(item);
         });
         if (!els.cameraRailItems.children.length) { const empty=doc.createElement('div'); empty.className='rail-empty'; empty.textContent=`尚無符合的 ${kind}`; els.cameraRailItems.appendChild(empty); }
         const focused = Array.from(els.cameraRailItems.querySelectorAll('[data-entity-id]')).find(item => item.dataset.entityKind === state.uiState.focusedEntity?.kind && item.dataset.entityId === state.uiState.focusedEntity?.id); focused?.scrollIntoView?.({block:'nearest'});
@@ -417,12 +422,44 @@
     }
     const unsubscribe = store.subscribe(render);
 
+    function closeOverflowMenu({restoreFocus = false} = {}) {
+      if (!overflowMenu) return;
+      const {button, menu} = overflowMenu;
+      if (button?.isConnected) { button.setAttribute('aria-expanded', 'false'); if (restoreFocus) button.focus(); }
+      menu?.remove(); overflowMenu = null;
+    }
+    function positionOverflowMenu(menu, button) {
+      const rect = button.getBoundingClientRect(), margin = 8, width = menu.offsetWidth || 176, height = menu.offsetHeight || 180;
+      const left = Math.max(margin, Math.min(rect.right - width, (view.innerWidth || 0) - width - margin));
+      const top = rect.bottom + height + margin <= (view.innerHeight || 0) ? rect.bottom + 4 : Math.max(margin, rect.top - height - 4);
+      menu.style.left = `${left}px`; menu.style.top = `${top}px`;
+    }
+    function openOverflowMenu(button, kind, id) {
+      if (overflowMenu?.button === button) { closeOverflowMenu({restoreFocus: true}); return; }
+      closeOverflowMenu();
+      const entity = kind === 'camera' ? store.getCamera(id) : store.getTarget(id); if (!entity) return;
+      const menu = doc.createElement('div'); menu.id = button.getAttribute('aria-controls'); menu.className = 'manager-overflow-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', `${entity.name || entity.id} 的操作`);
+      [['rename', 'Rename'], ['fit', 'Fit on map'], ['duplicate', 'Duplicate']].forEach(([action, label]) => { const option = doc.createElement('button'); option.type='button'; option.textContent=label; option.dataset.overflowAction=action; option.dataset.entityKind=kind; option.dataset.entityId=id; option.setAttribute('role','menuitem'); menu.appendChild(option); });
+      const divider = doc.createElement('div'); divider.className='manager-overflow-divider'; divider.setAttribute('role','separator'); menu.appendChild(divider);
+      const remove = doc.createElement('button'); remove.type='button'; remove.textContent='Delete'; remove.className='danger'; remove.dataset.overflowAction='delete'; remove.dataset.entityKind=kind; remove.dataset.entityId=id; remove.setAttribute('role','menuitem'); menu.appendChild(remove);
+      doc.body.appendChild(menu); button.setAttribute('aria-expanded','true'); overflowMenu = {button, menu}; positionOverflowMenu(menu, button);
+    }
+    function performEntityAction(kind, id, verb) {
+      const entity=kind==='camera'?store.getCamera(id):store.getTarget(id); if(!entity)return;
+      if (verb === 'rename') { const name=view.prompt(`${kind} 名稱`,entity.name||kind); if(name&&name.trim()) return kind==='camera'?store.patchCamera(id,{name:name.trim()},`${kind}-rename`):store.patchTarget(id,{name:name.trim()},`${kind}-rename`); }
+      if (verb === 'fit') return kind==='camera'?mapController.fitCamera?.(id):mapController.fitTarget?.(id);
+      if (verb === 'duplicate') return kind==='camera'?store.duplicateCamera(id):store.duplicateTarget(id);
+      if (verb === 'delete' && view.confirm(`刪除 ${entity.name||id}？`)) return kind==='camera'?store.removeCamera(id):store.removeTarget(id);
+    }
     function onCameraRailClick(event) {
       const action = event.target.closest?.('[data-entity-action]'), item = event.target.closest?.('[data-entity-id]');
-      if (action) { event.stopPropagation(); const kind=action.dataset.entityKind, id=action.dataset.entityId, entity=kind==='camera'?store.getCamera(id):store.getTarget(id); if(!entity)return; const verb=action.dataset.entityAction; if(['visible','enabled','locked'].includes(verb)) return kind==='camera'?store.patchCamera(id,{[verb]:verb==='locked'?!entity.locked:!(entity[verb]!==false)},`${kind}-${verb}`):store.patchTarget(id,{[verb]:verb==='locked'?!entity.locked:!(entity[verb]!==false)},`${kind}-${verb}`); if(verb==='rename') { const name=view.prompt(`${kind} 名稱`,entity.name||kind); if(name&&name.trim()) return kind==='camera'?store.patchCamera(id,{name:name.trim()},`${kind}-rename`):store.patchTarget(id,{name:name.trim()},`${kind}-rename`); } if(verb==='fit') return kind==='camera'?mapController.fitCamera?.(id):mapController.fitTarget?.(id); if(verb==='duplicate') return kind==='camera'?store.duplicateCamera(id):store.duplicateTarget(id); if(verb==='delete'&&view.confirm(`刪除 ${entity.name||id}？`)) return kind==='camera'?store.removeCamera(id):store.removeTarget(id); }
-      if (item) { store.cancelPreview(); if (item.dataset.entityKind === 'camera') store.selectCamera(item.dataset.entityId); else store.selectTarget(item.dataset.entityId); showDetails(item.dataset.entityKind, item.dataset.entityId); }
+      const overflow = event.target.closest?.('[data-entity-overflow]');
+      if (overflow) { event.stopPropagation(); openOverflowMenu(overflow, overflow.dataset.entityKind, overflow.dataset.entityId); return; }
+      if (action) { event.stopPropagation(); closeOverflowMenu(); const kind=action.dataset.entityKind, id=action.dataset.entityId, entity=kind==='camera'?store.getCamera(id):store.getTarget(id); if(!entity)return; const verb=action.dataset.entityAction; if(['visible','enabled','locked'].includes(verb)) return kind==='camera'?store.patchCamera(id,{[verb]:verb==='locked'?!entity.locked:!(entity[verb]!==false)},`${kind}-${verb}`):store.patchTarget(id,{[verb]:verb==='locked'?!entity.locked:!(entity[verb]!==false)},`${kind}-${verb}`); }
+      if (item) { closeOverflowMenu(); store.cancelPreview(); if (item.dataset.entityKind === 'camera') store.selectCamera(item.dataset.entityId); else store.selectTarget(item.dataset.entityId); showDetails(item.dataset.entityKind, item.dataset.entityId); }
     }
-    function onCameraRailKeydown(event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-entity-id]')) { event.preventDefault(); store.cancelPreview(); if (event.target.dataset.entityKind === 'camera') store.selectCamera(event.target.dataset.entityId); else store.selectTarget(event.target.dataset.entityId); showDetails(event.target.dataset.entityKind,event.target.dataset.entityId); } }
+    function onCameraRailKeydown(event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-entity-id]')) { event.preventDefault(); closeOverflowMenu(); store.cancelPreview(); if (event.target.dataset.entityKind === 'camera') store.selectCamera(event.target.dataset.entityId); else store.selectTarget(event.target.dataset.entityId); showDetails(event.target.dataset.entityKind,event.target.dataset.entityId); } }
+    function onOverflowClick(event) { const option = event.target.closest?.('[data-overflow-action]'); if (!option) return; event.stopPropagation(); const {entityKind: kind, entityId: id, overflowAction: verb} = option.dataset; closeOverflowMenu(); performEntityAction(kind, id, verb); }
     function onInspectorClick(event) { const button = event.target.closest?.('button'); if (!button) return; const id = button.id; const state = store.getState(); const camera = selectedCamera(state), target = selectedTarget(state); if (id === 'closeInspector') return closeInspector(); if (id === 'relocateCamera') { if (camera && !camera.locked) store.setInteractionMode('place-camera'); return; } if (id === 'fitCamera') return camera && mapController.fitCamera?.(camera.id); if (id === 'fitFov') return camera && mapController.fitCameraFov?.(camera.id); if (id === 'duplicateCamera') { if (camera) { store.duplicateCamera(camera.id); store.setInspectorTab('details'); } return; } if (id === 'renameCamera') { if (camera) { const next = view.prompt('Camera 名稱', camera.name || 'Camera'); if (next && next.trim()) store.patchCamera(camera.id, {name: next.trim()}, 'camera-rename'); } return; } if (id === 'deleteCamera') { if (camera && view.confirm(`刪除 ${camera.name || camera.id}？`)) store.removeCamera(camera.id); return; } if (id === 'resetCamera') { if (camera && !camera.locked) store.patchCamera(camera.id, {...DEFAULT_CAMERA}, 'camera-reset'); return; } if (id === 'fitTarget') return target && mapController.fitTarget?.(target.id); if (id === 'fitCameraTarget') return camera && target && mapController.fitCameraAndTarget?.(camera.id,target.id); if (id === 'duplicateTarget') { if (target) { store.duplicateTarget(target.id); store.setInspectorTab('details'); } return; } if (id === 'renameTarget') { if (target) { const next=view.prompt('Target 名稱',target.name||'Target'); if(next&&next.trim())store.patchTarget(target.id,{name:next.trim()},'target-rename'); } return; } if (id === 'deleteTarget' && target && view.confirm(`刪除 ${target.name||target.id}？`)) { store.removeTarget(target.id); store.setInspectorTab('details'); return; } if (id === 'downloadCameraScene') return downloadScene(); if (id === 'copyCameraScene') return copyScene(); }
     function onShellClick(event) {
       const modeButton = event.target.closest?.('[data-mode]');
@@ -430,7 +467,7 @@
       if (event.target.closest?.('#cancelPlacement')) { mapController.cancelInteraction(); return; }
       const sectionToggle = event.target.closest?.('[data-section-toggle]');
       if (sectionToggle) { const body = rootElement.querySelector(`[data-section-body="${sectionToggle.dataset.sectionToggle}"]`); const expanded = sectionToggle.getAttribute('aria-expanded') !== 'false'; sectionToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true'); if (body) body.hidden = expanded; return; }
-      const managerTab = event.target.closest?.('[data-manager-tab]'); if (managerTab) { store.setObjectManagerTab(managerTab.dataset.managerTab); return; }
+      const managerTab = event.target.closest?.('[data-manager-tab]'); if (managerTab) { closeOverflowMenu(); store.setObjectManagerTab(managerTab.dataset.managerTab); return; }
       const inspectorTab = event.target.closest?.('[data-inspector-tab]'); if (inspectorTab) { store.setInspectorTab(inspectorTab.dataset.inspectorTab); return; }
       const workspaceTab = event.target.closest?.('[data-workspace-tab]');
       if (workspaceTab) { store.setActiveWorkspaceTab(workspaceTab.dataset.workspaceTab); return; }
@@ -438,16 +475,16 @@
       if (event.target.closest?.('#mapSettingsToggle') || event.target.closest?.('#openProjectSettings')) { setPanel('mapSettings', !(store.getState().uiState.panelOpen.mapSettings)); return; }
       if (event.target.closest?.('#closeMapSettings')) { setPanel('mapSettings', false); return; }
     }
-    function onGlobalClick(event) { if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
-    function onKeydown(event) { if (event.key !== 'Escape') return; const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { mapController.cancelInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
+    function onGlobalClick(event) { if (overflowMenu && !event.target.closest?.('.manager-overflow-menu, [data-entity-overflow]')) closeOverflowMenu(); if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
+    function onKeydown(event) { if (event.key !== 'Escape') return; if (overflowMenu) { closeOverflowMenu({restoreFocus: true}); return; } const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { mapController.cancelInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
     function onInput(event) { const element = event.target; if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
     function onChange(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
     function onEnter(event) { if (event.key === 'Enter') { const element = event.target; if (element.dataset.cameraField) { event.preventDefault(); commitCameraField(element.dataset.cameraField); } if (element.dataset.targetField) { event.preventDefault(); commitTargetField(element.dataset.targetField); } } }
     function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); }
 
-    listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
-    listen(els.inspector, 'click', onInspectorClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
+    listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraRailItems, 'scroll', () => closeOverflowMenu()); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
+    listen(els.inspector, 'click', onInspectorClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
     listen($('addCamera'), 'click', () => { const state = store.getState(); const id = store.addCamera({name: `Camera ${state.cameraOrder.length + 1}`, lifecycle: 'draft-unplaced', visible: true, enabled: true, locked: false, ...DEFAULT_CAMERA}); store.selectCamera(id); store.setInteractionMode('place-camera'); showDetails('camera', id); });
     listen($('addTargetManager'), 'click', () => { store.setInteractionMode('place-target'); });
     listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo()); listen($('openInspector'), 'click', showInspector);
@@ -457,7 +494,7 @@
     render(store.getState());
     scheduleInvalidate();
 
-    const publicApi = {store, mapController, render, destroy() { if (destroyed) return; destroyed = true; unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
+    const publicApi = {store, mapController, render, destroy() { if (destroyed) return; destroyed = true; closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
     const testWindow = view || root; testWindow.projectStoreForTest = store; testWindow.mapControllerForTest = mapController; testWindow.cameraSceneExportForTest = {buildCameraScene: publicApi.buildCameraScene, serializeCameraScene: publicApi.serializeCameraScene}; testWindow.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry}; testWindow.cameraMarkerForTest = {getLatLng() { const id = selectedCameraId(); const snapshot = id && mapController.getCameraLayerSnapshot(id); return snapshot?.markerPosition && L?.latLng ? L.latLng(snapshot.markerPosition.lat, snapshot.markerPosition.lng) : snapshot?.markerPosition || null; }};
     return publicApi;
   }
