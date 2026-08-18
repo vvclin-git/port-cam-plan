@@ -76,7 +76,7 @@ test('Target search is UI-only and remains out of project/history/dirty state', 
   const s = store(); s.markSaved(); const before = s.getState(); s.setTargetSearchQuery('harbor'); const after = s.getState();
   assert.equal(after.uiState.targetSearchQuery, 'harbor'); assert.deepEqual(after.history, before.history); assert.equal(after.dirty, false); assert.equal(JSON.stringify(s.toCameraProject()).includes('harbor'), false);
 });
-test('Object Manager focus, tabs, and independent searches stay UI-only while preserving observation pairing', () => {
+test('Object Manager focus, tabs, and independent searches stay UI-only with independent analysis inputs', () => {
   const s = store(); s.markSaved(); const before=s.getState(); s.setFocusedEntity('target','t2'); s.setObjectManagerTab('cameras'); s.setInspectorTab('observation'); s.setCameraSearchQuery('camera'); s.setTargetSearchQuery('target'); const after=s.getState();
   assert.deepEqual(after.uiState.focusedEntity,{kind:'camera',id:'a'}); assert.equal(after.uiState.selectedCameraId,'a'); assert.equal(after.uiState.selectedTargetId,'t2'); assert.equal(after.uiState.inspectorTab,'observation'); assert.equal(after.uiState.cameraSearchQuery,'camera'); assert.deepEqual(after.history,before.history); assert.equal(after.dirty,false); assert.equal(JSON.stringify(s.toCameraProject()).includes('focusedEntity'),false);
   s.setFocusedEntity('target','t2'); s.removeTarget('t2'); assert.deepEqual(s.getState().uiState.focusedEntity,{kind:'target',id:'t1'}); s.undo(); assert.equal(s.getState().uiState.focusedEntity.id,'t1');

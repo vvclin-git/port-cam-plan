@@ -156,7 +156,7 @@ python -m unittest -v test_ray_cast_test.py
 
 - `PortCamUI.createAppController({store, mapController, root})` 負責 Store-driven DOM projection、panel state、responsive invalidation 與 cleanup；實際頁面以 `map`／Leaflet 建立既有 `PortCamMap` controller。
 - Object Manager 是 Visible／Enabled／Locked 的唯一控制入口；其 Cameras／Targets tabs 均支援搜尋、選取、重新命名、Fit、複製與刪除。
-- Context Inspector 的 Details 顯示 focused entity，Observation 固定顯示獨立 selected Camera × Target pairing；`setActiveResultTab` 僅為相容性保留的 deprecated UI-only API。
+- Context Inspector 的 Details 顯示 focused entity；Observation 即時計算 Current Target 由 Active Camera 觀測的結果，不建立或保存物件關係。`setActiveResultTab` 僅為相容性保留的 deprecated UI-only API。
 - Camera 與 Target 欄位都採 preview／blur／Enter single-commit；Target Details 在 preview 時保留 active input、捲動與 section 收合狀態。
 - Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown`、tile zoom 與獨立 labels 設定。Project Import／Save、Comparison table 與精確四角 ray 仍不在本階段。
 
@@ -172,7 +172,7 @@ python -m unittest -v test_ray_cast_test.py
 
 ## Phase 3.2 Unified Object Management UI
 
-左側 Object Manager 收斂 Cameras／Targets 表格；右側 Context Inspector 以 Details／Observation 顯示 focused entity 與 selected Camera × Target pairing。Bottom Workspace 僅保留 Phase 4 的 Comparison／YOLO placeholders。細節見 [`docs/PHASE_3_2_HANDOFF.md`](./docs/PHASE_3_2_HANDOFF.md)。
+左側 Object Manager 收斂 Cameras／Targets 表格；右側 Context Inspector 以 Details／Observation 顯示 focused entity 與 Current Target／Active Camera 的即時計算結果。Bottom Workspace 僅保留 Phase 4 的 Comparison／YOLO placeholders。細節見 [`docs/PHASE_3_2_HANDOFF.md`](./docs/PHASE_3_2_HANDOFF.md)。
 
 2026-08-17 UI polish 移除 Top Bar Observation、Camera Open Result 與舊 Result Drawer DOM；Target 建立後自動切到 Observation。Target marker drag preview 不會重建作用中的 `L.divIcon`，只在 selected／locked／enabled 樣式改變時更新 icon。
 
