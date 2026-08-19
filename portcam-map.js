@@ -11,6 +11,7 @@
   const point = (L, position) => L.latLng(position.latitudeDeg, position.longitudeDeg);
   const positionFromLatLng = latlng => ({latitudeDeg: Number(latlng.lat), longitudeDeg: Number(latlng.lng)});
   const CAMERA_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#a16207'];
+  const COVERAGE_COLORS = {robust: '#15803d', usable: '#a16207', difficult: '#c2410c', notRecommended: '#b42318'};
   const PANE_NAMES = {analysis: 'portcam-analysis-pane', camera: 'portcam-camera-marker-pane', target: 'portcam-target-marker-pane', label: 'portcam-entity-label-pane'};
   const PANE_Z = {analysis: 400, camera: 650, target: 700, label: 750};
 
@@ -52,6 +53,34 @@
       getCanonicalPosition() { return clone(canonicalPosition); },
       destroy() { marker.off?.('dragstart', onDragStart); marker.off?.('drag', onDrag); marker.off?.('dragend', onDragEnd); }
     };
+  }
+
+  function coverageBandRanges(camera, settings) {
+    try {
+      const planningTargetHeightM = Number(settings?.planningTargetHeightM || 2);
+      const optics = Core.computeOptics(camera);
+      const horizon = Core.computePlanningHorizon(camera.heightM, planningTargetHeightM);
+      const envelope = Core.computeGroundEnvelope(camera, optics, {horizonDistanceM: horizon.distanceM});
+      const horizonDistanceM = Number(horizon.distanceM);
+      const near = Math.max(0, Number(envelope.nearDistanceM || 0));
+      const far = Math.min(Number(envelope.farDistanceM || horizonDistanceM), horizonDistanceM, 30000);
+      if (!Number.isFinite(near) || !Number.isFinite(far) || far <= near) return [];
+      const clamp = value => Math.max(near, Math.min(far, Number(value)));
+      const boundaries = [near,
+        Core.rangeForPixels(planningTargetHeightM, camera.focalLengthMm, optics.pixelPitchMm, 32),
+        Core.rangeForPixels(planningTargetHeightM, camera.focalLengthMm, optics.pixelPitchMm, 16),
+        Core.rangeForPixels(planningTargetHeightM, camera.focalLengthMm, optics.pixelPitchMm, 8),
+        far].map(clamp);
+      const bands = [
+        {key: 'robust', color: COVERAGE_COLORS.robust},
+        {key: 'usable', color: COVERAGE_COLORS.usable},
+        {key: 'difficult', color: COVERAGE_COLORS.difficult},
+        {key: 'notRecommended', color: COVERAGE_COLORS.notRecommended}
+      ];
+      return bands.map((band, index) => ({...band, innerM: boundaries[index], outerM: boundaries[index + 1]})).filter(band => band.outerM > band.innerM);
+    } catch (_) {
+      return [];
+    }
   }
 
   function createMapController({map, leaflet: L, store, onCameraDrag, onMapClick, onCameraSelect, onTargetSelect, labelVisibility}) {
@@ -119,11 +148,10 @@
       const poly = L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, near, far), {color, weight:selected ? 3 : 1.2, opacity:selected ? .95 : .42, fillColor:color, fillOpacity:selected ? .1 : .035, dashArray:camera.enabled === false ? '5,5' : null, ...geometryOptions}).addTo(record.group);
       record.envelope.push(poly);
       record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, far))], {color, weight:selected ? 1.4 : .8, opacity:selected ? .85 : .35, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
-      if (selected && camera.enabled !== false) {
-        const targetM = state.settings.planningTargetHeightM || 2, pitch = optics.pixelPitchMm;
-        [[0,32,'#1f9d55'],[32,16,'#d99a00'],[16,8,'#e56b00']].forEach(([a,b,bandColor]) => {
-          const inner = a ? Core.rangeForPixels(targetM, camera.focalLengthMm, pitch, a) : 0, outer = Math.min(Core.rangeForPixels(targetM, camera.focalLengthMm, pitch, b), far);
-          if (outer > inner) record.bands.push(L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, Math.max(inner, near), outer), {color:bandColor, weight:1, fillColor:bandColor, fillOpacity:.16, ...geometryOptions}).addTo(record.group));
+      const fovColorMode = state.uiState?.fovColorMode === 'camera' ? 'camera' : 'coverage';
+      if (selected && camera.enabled !== false && fovColorMode === 'coverage') {
+        coverageBandRanges(camera, state.settings).forEach(band => {
+          record.bands.push(L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, band.innerM, band.outerM), {color:band.color, weight:1, fillColor:band.color, fillOpacity:.16, ...geometryOptions}).addTo(record.group));
         });
       }
       if (selected && record.group.bringToFront) record.group.bringToFront();
@@ -196,5 +224,5 @@
     ensurePanes(); bindWheel(); map.on?.('click', handleMapClick);
     return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, cancelInteraction() { store.cancelPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
   }
-  return {createMapController, createEntityMarkerInteraction, PANE_NAMES};
+  return {createMapController, createEntityMarkerInteraction, coverageBandRanges, CAMERA_COLORS, COVERAGE_COLORS, PANE_NAMES};
 }));

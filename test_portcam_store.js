@@ -72,6 +72,24 @@ test('UI-only panel and tab state does not affect project dirty state or history
   assert.throws(() => s.setActiveResultTab('missing'), /invalid result tab/);
   assert.throws(() => s.setActiveWorkspaceTab('missing'), /invalid workspace tab/);
 });
+test('FOV color mode is UI-only, defaults to coverage, and does not participate in undo/redo', () => {
+  const s = store(); s.markSaved(); const before = s.getState();
+  assert.equal(before.uiState.fovColorMode, 'coverage');
+  s.setFovColorMode('camera');
+  const cameraMode = s.getState();
+  assert.equal(cameraMode.uiState.fovColorMode, 'camera');
+  assert.deepEqual(cameraMode.history, before.history);
+  assert.equal(cameraMode.dirty, false);
+  assert.equal(JSON.stringify(s.toCameraProject()).includes('fovColorMode'), false);
+  s.setFovColorMode('invalid');
+  assert.equal(s.getState().uiState.fovColorMode, 'coverage');
+  s.patchCamera('a', {headingDeg: 12}, 'heading');
+  s.setFovColorMode('camera');
+  s.undo();
+  assert.equal(s.getState().uiState.fovColorMode, 'camera');
+  s.redo();
+  assert.equal(s.getState().uiState.fovColorMode, 'camera');
+});
 test('Target search is UI-only and remains out of project/history/dirty state', () => {
   const s = store(); s.markSaved(); const before = s.getState(); s.setTargetSearchQuery('harbor'); const after = s.getState();
   assert.equal(after.uiState.targetSearchQuery, 'harbor'); assert.deepEqual(after.history, before.history); assert.equal(after.dirty, false); assert.equal(JSON.stringify(s.toCameraProject()).includes('harbor'), false);

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {createProjectStore} = require('./portcam-store.js');
-const {createMapController} = require('./portcam-map.js');
+const {createMapController, coverageBandRanges} = require('./portcam-map.js');
 
 function fakeLeaflet() {
   class Layer { addTo(parent) { parent.addLayer(this); return this; } }
@@ -25,6 +25,24 @@ test('projection keeps three independent camera groups and undo restores marker 
   const draft = store.addCamera({...cam('draft', 22.63), lifecycle:'draft-unplaced'}); assert.equal(controller.getCameraLayerSnapshot(draft), null);
   store.patchCamera(draft, {lifecycle:'placed', position:{latitudeDeg:22.631,longitudeDeg:120.28}}); assert.equal(controller.getCameraLayerSnapshot(draft).envelopeLayerCount, 1);
   controller.destroy(); assert.equal(map.events.click, undefined);
+});
+
+test('coverage mode renders four clipped bands, while Camera colors renders identity FOV only', () => {
+  const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60,{tiltDownDeg:5}),cam('b',22.61,{tiltDownDeg:5})], targets:[]}, {idFactory:()=> 'generated'});
+  const map=fakeMap(), controller=createMapController({map,leaflet:fakeLeaflet(),store}); store.subscribe(state=>controller.sync(state)); controller.sync(store.getState());
+  const ranges = coverageBandRanges(store.getCamera('a'), store.getState().settings);
+  assert.equal(ranges.length, 4);
+  assert.ok(ranges.every(range => range.innerM >= 0 && range.outerM <= 30000 && range.outerM > range.innerM));
+  assert.deepEqual(ranges.map(range => range.key), ['robust','usable','difficult','notRecommended']);
+  assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, 4);
+  assert.equal(controller.getCameraLayerSnapshot('b').bandLayerCount, 0);
+  store.setFovColorMode('camera');
+  assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, 0);
+  assert.equal(controller.getCameraLayerSnapshot('b').bandLayerCount, 0);
+  store.setFovColorMode('bad-value');
+  assert.equal(store.getState().uiState.fovColorMode, 'coverage');
+  assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, 4);
+  controller.destroy();
 });
 
 test('Camera and Target share one drag preview/commit contract and map projections', () => {

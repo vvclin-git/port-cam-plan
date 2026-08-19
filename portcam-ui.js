@@ -2,13 +2,17 @@
 (function (root, factory) {
   const api = factory(
     root.PortCamCore || (typeof require === 'function' ? require('./portcam-core.js') : null),
-    root.PortCamMap || (typeof require === 'function' ? require('./portcam-map.js') : null)
+    root.PortCamMap || (typeof require === 'function' ? require('./portcam-map.js') : null),
+    root.PortCamComparison || (typeof require === 'function' ? require('./portcam-comparison.js') : null),
+    root.PortCamYoloCoverage || (typeof require === 'function' ? require('./portcam-yolo-coverage.js') : null)
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamUI = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage) {
   'use strict';
   if (!Core) throw new Error('PortCamUI requires PortCamCore');
+  if (!Comparison) throw new Error('PortCamUI requires PortCamComparison');
+  if (!YoloCoverage) throw new Error('PortCamUI requires PortCamYoloCoverage');
 
   const CAMERA_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#a16207'];
   const TILE_PADDING = 1;
@@ -89,7 +93,8 @@
       cameraRailItems: $('cameraRailItems'), cameraSelect: $('cameraSelect'),
       inspector: $('inspectorPanel'),
       inspectorContent: $('inspectorContent'), resultContent: $('contextDynamicContent'), contextTabs: $('contextInspectorTabs'),
-      resultTabs: null, workspace: $('bottomWorkspace'), workspaceContent: $('workspaceContent'), workspaceTabs: $('workspaceTabs'),
+      resultTabs: null, workspace: $('bottomWorkspace'), workspaceContent: $('workspaceContent'), workspaceTabs: $('workspaceTabs'), workspaceSummary: $('workspaceSummary'),
+      mapLegend: $('mapLegend'),
       projectName: $('projectName'), dirty: $('dirtyState'), undo: $('undoButton'), redo: $('redoButton'),
       status: $('status'), mapError: $('mapError'), instruction: $('instructionBanner'), instructionText: $('instructionText'),
       mapSettingsPopover: $('mapSettingsPopover'), mapSettingsToggle: $('mapSettingsToggle'),
@@ -278,18 +283,95 @@
         rows.appendChild(row);
       });
     }
+    function comparisonNumber(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
+    function comparisonDistance(observation) { const value = comparisonNumber(observation?.distanceM); return value === null ? '—' : fmtM(value); }
+    function comparisonAzimuth(observation) { const value = comparisonNumber(observation?.azimuthDeg); return value === null ? '—' : fmtDeg(value); }
+    function comparisonPixelSize(observation, rankable) {
+      const width = comparisonNumber(observation?.pixelWidth), height = comparisonNumber(observation?.pixelHeight);
+      return rankable && width !== null && height !== null ? `${width.toFixed(1)} × ${height.toFixed(1)} px` : '—';
+    }
+    function comparisonShortSide(observation, rankable) {
+      const value = comparisonNumber(observation?.yolo?.shortSidePx);
+      return rankable && value !== null ? `${value.toFixed(1)} px` : '—';
+    }
+    function comparisonMarkup(state, target) {
+      const comparison = Comparison.buildCameraComparison({
+        cameraOrder: state.cameraOrder,
+        camerasById: state.camerasById,
+        currentTarget: target,
+        activeCameraId: state.uiState.selectedCameraId,
+        getObservation: (cameraId, targetId) => store.getObservation(cameraId, targetId)
+      });
+      if (!comparison.enabledCount) return '<div class="comparison-empty result-state neutral"><strong>No enabled Cameras</strong>Enable or create a Camera to compare this Target.</div>';
+      const disabledTargetNotice = target.enabled === false ? '<div class="comparison-notice result-state neutral"><strong>Current Target is disabled</strong>All enabled Cameras are shown as Unavailable.</div>' : '';
+      const rows = comparison.rows.map(row => {
+        const observation = row.observation;
+        const statusTitle = observation?.error ? ` title="${escapeHtml(observation.error)}"` : '';
+        return `<tr class="comparison-row${row.active ? ' is-active' : ''}" data-comparison-camera-id="${escapeHtml(row.cameraId)}"><td class="comparison-rank">${row.rank ?? '—'}</td><th scope="row" class="comparison-camera"><button class="comparison-camera-button" type="button" data-comparison-camera-id="${escapeHtml(row.cameraId)}" aria-current="${row.active ? 'true' : 'false'}"><span class="comparison-camera-name">${escapeHtml(row.camera.name || row.camera.id)}</span>${row.active ? '<span class="comparison-active-label">Active Camera</span>' : ''}</button></th><td><span class="status-badge ${row.status.className}"${statusTitle}>${escapeHtml(row.status.label)}</span></td><td class="comparison-number">${comparisonDistance(observation)}</td><td class="comparison-number">${comparisonAzimuth(observation)}</td><td class="comparison-number">${comparisonPixelSize(observation, row.status.rankable)}</td><td class="comparison-number">${comparisonShortSide(observation, row.status.rankable)}</td></tr>`;
+      }).join('');
+      return `${disabledTargetNotice}<div class="comparison-table-scroll" role="region" aria-label="Camera Comparison table"><table class="comparison-table"><caption class="sr-only">Camera observations for ${escapeHtml(target.name || target.id)}</caption><thead><tr><th scope="col">Rank</th><th scope="col">Camera</th><th scope="col">Observation status</th><th scope="col">Distance</th><th scope="col">Azimuth</th><th scope="col">Target pixel size</th><th scope="col">YOLO short side</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+    function yoloModeButton(mode, label, activeMode) {
+      return `<button class="yolo-mode-button" type="button" data-fov-color-mode="${mode}" aria-pressed="${activeMode === mode ? 'true' : 'false'}">${label}</button>`;
+    }
+    function yoloCoverageToolbar(state) {
+      const mode = state.uiState.fovColorMode === 'camera' ? 'camera' : 'coverage';
+      return `<div class="yolo-toolbar"><div><strong>FOV coloring</strong><span>Map presentation only · Observation values unchanged.</span></div><div class="yolo-segmented" role="group" aria-label="FOV color mode">${yoloModeButton('camera', 'Camera colors', mode)}${yoloModeButton('coverage', 'Pixel coverage', mode)}</div></div>`;
+    }
+    function yoloValue(value, digits, suffix = '') {
+      const parsed = comparisonNumber(value);
+      return parsed === null ? '—' : `${parsed.toFixed(digits)}${suffix}`;
+    }
+    function yoloCoverageMarkup(state, target) {
+      const toolbar = yoloCoverageToolbar(state);
+      if (!target) return `${toolbar}<div class="yolo-empty result-state neutral"><strong>No Current Target</strong>Select a Target from Object Manager or the map.</div>`;
+      const comparison = Comparison.buildCameraComparison({
+        cameraOrder: state.cameraOrder,
+        camerasById: state.camerasById,
+        currentTarget: target,
+        activeCameraId: state.uiState.selectedCameraId,
+        getObservation: (cameraId, targetId) => store.getObservation(cameraId, targetId)
+      });
+      const coverage = YoloCoverage.buildYoloCoverage({comparison});
+      const counts = coverage.counts;
+      const summary = `<section class="yolo-summary" aria-label="YOLO Coverage summary"><div class="yolo-summary-heading"><strong>${escapeHtml(target.name || target.id)}</strong><span>Current Target · ${coverage.enabledCount} enabled Cameras · ${coverage.disabledCount} disabled excluded</span></div><div class="yolo-summary-grid"><div><span>≥ 32 px · Robust</span><b>${counts.robust}</b></div><div><span>16–&lt;32 px · Usable</span><b>${counts.usable}</b></div><div><span>8–&lt;16 px · Difficult</span><b>${counts.difficult}</b></div><div><span>&lt; 8 px · Not recommended</span><b>${counts.notRecommended}</b></div><div><span>Outside FOV</span><b>${counts.outsideFov}</b></div><div><span>Unavailable / Failed</span><b>${counts.unavailableFailed}</b></div></div></section>`;
+      const warning = '<div class="yolo-warning result-state neutral">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div>';
+      const referenceSize = comparisonNumber(state.settings.planningTargetHeightM);
+      const dataNote = `<div class="yolo-data-note">Workspace table uses Current Target Observation <code>yolo.shortSidePx</code>. Map bands use Project planning reference size${referenceSize === null ? '' : ` (${referenceSize.toFixed(1)} m)`}.</div>`;
+      if (!coverage.enabledCount) return `${toolbar}${summary}${warning}${dataNote}<div class="yolo-empty result-state neutral"><strong>No enabled Cameras</strong>Enable or create a Camera to analyze this Target.</div>`;
+      const disabledTargetNotice = target.enabled === false ? '<div class="comparison-notice result-state neutral"><strong>Current Target is disabled</strong>Camera rows are retained and shown as Unavailable.</div>' : '';
+      const rows = coverage.rows.map(row => {
+        const observation = row.observation;
+        const yolo = row.yolo;
+        const statusTitle = observation?.error ? ` title="${escapeHtml(observation.error)}"` : '';
+        const tierClass = yolo.tier ? ` yolo-tier-${yolo.tier.key}` : '';
+        return `<tr class="yolo-row${row.active ? ' is-active' : ''}" data-yolo-camera-id="${escapeHtml(row.cameraId)}"><th scope="row" class="yolo-camera"><button class="yolo-camera-button" type="button" data-yolo-camera-id="${escapeHtml(row.cameraId)}" aria-current="${row.active ? 'true' : 'false'}"><span class="yolo-camera-identity" style="background:${escapeHtml(cameraColor(row.camera, state.cameraOrder))}"></span><span class="yolo-camera-name">${escapeHtml(row.camera.name || row.camera.id)}</span>${row.active ? '<span class="yolo-active-label">Active Camera</span>' : ''}</button></th><td><span class="status-badge ${yolo.observationClassName}"${statusTitle}>${yolo.observationLabel}</span></td><td><span class="yolo-tier${tierClass}">${yolo.tier ? yolo.tier.label : '—'}</span></td><td class="comparison-number">${yolo.tier ? yoloValue(observation?.yolo?.shortSidePx, 1, ' px') : '—'}</td><td class="comparison-number">${yolo.tier ? yoloValue(observation?.yolo?.p3Cells, 2) : '—'}</td><td class="comparison-number">${yolo.tier ? yoloValue(observation?.yolo?.p4Cells, 2) : '—'}</td><td class="comparison-number">${yolo.tier ? yoloValue(observation?.yolo?.p5Cells, 2) : '—'}</td></tr>`;
+      }).join('');
+      return `${toolbar}${summary}${warning}${dataNote}${disabledTargetNotice}<div class="yolo-table-scroll" role="region" aria-label="YOLO Coverage table"><table class="yolo-table"><caption class="sr-only">YOLO Coverage observations for ${escapeHtml(target.name || target.id)}</caption><thead><tr><th scope="col">Camera</th><th scope="col">Observation status</th><th scope="col">YOLO tier</th><th scope="col">Short side</th><th scope="col">P3 cells</th><th scope="col">P4 cells</th><th scope="col">P5 cells</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
     function renderWorkspace(state) {
       if (!els.workspaceContent) return;
       const active = state.uiState.activeWorkspaceTab === 'yolo' ? 'yolo' : 'comparison';
       if (els.workspaceTabs) Array.from(els.workspaceTabs.querySelectorAll('[data-workspace-tab]')).forEach(tab => tab.setAttribute('aria-selected', tab.dataset.workspaceTab === active ? 'true' : 'false'));
-      if (false) {
-        if (!els.workspaceContent.querySelector('#targetListRoot')) els.workspaceContent.innerHTML = '<div id="targetListRoot" class="target-list-root"><div class="target-list-toolbar"><label for="targetSearch">Search Targets</label><input id="targetSearch" class="field-control" type="search" placeholder="名稱、ID 或座標" autocomplete="off" /></div><div id="targetRows" class="target-rows"></div></div>';
-        setValue($('targetSearch'), state.uiState.targetSearchQuery || '');
-        renderTargetRows(state);
+      const targetId = state.uiState.selectedTargetId;
+      const targetFromState = targetId ? state.targetsById[targetId] : null;
+      const target = selectedTarget(state);
+      const enabledCount = state.cameraOrder.filter(id => state.camerasById[id]?.enabled !== false).length;
+      const disabledCount = state.cameraOrder.filter(id => state.camerasById[id]?.enabled === false).length;
+      if (els.workspaceSummary) els.workspaceSummary.textContent = `Current Target: ${targetFromState?.name || '—'} · ${enabledCount} enabled Cameras · ${disabledCount} disabled excluded`;
+      if (state.uiState.panelOpen?.workspace !== true) {
+        els.workspaceContent.innerHTML = `<div class="empty-next"><strong>${active === 'yolo' ? 'YOLO Coverage' : 'Camera Comparison'}</strong>Expand the workspace to load Observations.</div>`;
         return;
       }
-      const copy = {comparison: ['Camera Comparison', 'Comparison table 與排名安排在 Phase 4，Phase 3 不顯示假資料。'], yolo: ['YOLO Coverage', 'Coverage summary 與跨 Camera 分析安排在 Phase 4，Phase 3 不顯示假資料。']}[active] || ['Workspace', 'Coming next phase.'];
-      els.workspaceContent.innerHTML = `<div class="empty-next"><strong>${copy[0]}</strong>${copy[1]}</div>`;
+      if (active === 'yolo') {
+        els.workspaceContent.innerHTML = `<div class="yolo-view">${yoloCoverageMarkup(state, target)}</div>`;
+        return;
+      }
+      if (!target) {
+        els.workspaceContent.innerHTML = '<div class="comparison-empty result-state neutral"><strong>No Current Target</strong>Select a Target from Object Manager or the map.</div>';
+        return;
+      }
+      els.workspaceContent.innerHTML = `<div class="comparison-view">${comparisonMarkup(state, target)}</div>`;
     }
     function renderMapSettings(state) {
       if (els.baseMapSelect) setValue(els.baseMapSelect, state.settings.baseMapKey || 'osm');
@@ -298,6 +380,22 @@
       syncTileZoomOptions(state);
       if (els.surfaceState) els.surfaceState.textContent = surfaceLoadState === 'ready' ? '已載入' : surfaceLoadState === 'failed' ? '無法判定' : '載入中';
       if (els.surfaceHelp) els.surfaceHelp.textContent = surfaceLoadState === 'ready' ? '關閉視覺圖層不會停用 water／land／unknown 點擊分類。' : surfaceLoadState === 'failed' ? '請用 localhost 啟動；既有地圖與 Camera 計算仍可使用。' : '固定 GeoJSON 載入中。';
+    }
+    function renderMapLegend(state) {
+      if (!els.mapLegend) return;
+      const mode = state.uiState.fovColorMode === 'camera' ? 'camera' : 'coverage';
+      if (mode === 'camera') {
+        const cameras = state.cameraOrder.map(id => state.camerasById[id]).filter(camera => camera && camera.visible !== false && camera.lifecycle !== 'draft-unplaced' && camera.position);
+        const items = cameras.map(camera => {
+          const color = cameraColor(camera, state.cameraOrder);
+          const active = camera.id === state.uiState.selectedCameraId;
+          return `<div class="legend-item"><span class="legend-swatch" style="background:${escapeHtml(color)}"></span><span>${escapeHtml(camera.name || camera.id)}${active ? ' · Active Camera' : ''}</span></div>`;
+        }).join('');
+        els.mapLegend.innerHTML = `<div class="map-legend-title">Camera identity</div>${items || '<div class="tiny">No visible Cameras.</div>'}<div class="tiny map-legend-help">Each visible Camera uses its identity color. Active Camera has stronger outline/fill.</div>`;
+        return;
+      }
+      const referenceSize = comparisonNumber(state.settings.planningTargetHeightM);
+      els.mapLegend.innerHTML = `<div class="map-legend-title">Pixel coverage</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.robust}"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.usable}"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.difficult}"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.notRecommended}"></span>&lt; 8 px</div><div class="tiny map-legend-help">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div class="tiny map-legend-help">Based on Project planning reference size${referenceSize === null ? '' : ` (${referenceSize.toFixed(1)} m)`}.</div>`;
     }
     function renderContextInspector(state) {
       const focused = state.uiState.focusedEntity, observation = state.uiState.inspectorTab === 'observation';
@@ -421,7 +519,7 @@
 
     function render(state) {
       if (destroyed) return;
-      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContextInspector(state); renderWorkspace(state); renderMapSettings(state); renderInteraction(state); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(state);
+      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContextInspector(state); renderWorkspace(state); renderMapSettings(state); renderMapLegend(state); renderInteraction(state); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(state);
     }
     const unsubscribe = store.subscribe(render);
 
@@ -464,7 +562,26 @@
     function onCameraRailKeydown(event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-entity-id]')) { event.preventDefault(); closeOverflowMenu(); store.cancelPreview(); if (event.target.dataset.entityKind === 'camera') store.selectCamera(event.target.dataset.entityId); else store.selectTarget(event.target.dataset.entityId); showDetails(event.target.dataset.entityKind,event.target.dataset.entityId); } }
     function onOverflowClick(event) { const option = event.target.closest?.('[data-overflow-action]'); if (!option) return; event.stopPropagation(); const {entityKind: kind, entityId: id, overflowAction: verb} = option.dataset; closeOverflowMenu(); performEntityAction(kind, id, verb); }
     function onInspectorClick(event) { const button = event.target.closest?.('button'); if (!button) return; const id = button.id; const state = store.getState(); const camera = selectedCamera(state), target = selectedTarget(state); if (id === 'closeInspector') return closeInspector(); if (id === 'relocateCamera') { if (camera && !camera.locked) store.setInteractionMode('place-camera'); return; } if (id === 'fitCamera') return camera && mapController.fitCamera?.(camera.id); if (id === 'fitFov') return camera && mapController.fitCameraFov?.(camera.id); if (id === 'duplicateCamera') { if (camera) { store.duplicateCamera(camera.id); store.setInspectorTab('details'); } return; } if (id === 'renameCamera') { if (camera) { const next = view.prompt('Camera 名稱', camera.name || 'Camera'); if (next && next.trim()) store.patchCamera(camera.id, {name: next.trim()}, 'camera-rename'); } return; } if (id === 'deleteCamera') { if (camera && view.confirm(`刪除 ${camera.name || camera.id}？`)) store.removeCamera(camera.id); return; } if (id === 'resetCamera') { if (camera && !camera.locked) store.patchCamera(camera.id, {...DEFAULT_CAMERA}, 'camera-reset'); return; } if (id === 'fitTarget') return target && mapController.fitTarget?.(target.id); if (id === 'fitCameraTarget') return camera && target && mapController.fitCameraAndTarget?.(camera.id,target.id); if (id === 'duplicateTarget') { if (target) { store.duplicateTarget(target.id); store.setInspectorTab('details'); } return; } if (id === 'renameTarget') { if (target) { const next=view.prompt('Target 名稱',target.name||'Target'); if(next&&next.trim())store.patchTarget(target.id,{name:next.trim()},'target-rename'); } return; } if (id === 'deleteTarget' && target && view.confirm(`刪除 ${target.name||target.id}？`)) { store.removeTarget(target.id); store.setInspectorTab('details'); return; } if (id === 'downloadCameraScene') return downloadScene(); if (id === 'copyCameraScene') return copyScene(); }
+    function activateWorkspaceCamera(id, workspaceTab, selector) {
+      const camera = store.getCamera(id);
+      if (!camera || camera.enabled === false) return;
+      store.cancelPreview();
+      store.setActiveWorkspaceTab(workspaceTab);
+      store.selectCamera(id);
+      setPanel('workspace', true);
+      showInspector();
+      const focus = () => Array.from(rootElement.querySelectorAll(selector)).find(button => (button.dataset.comparisonCameraId || button.dataset.yoloCameraId) === id)?.focus();
+      (view.requestAnimationFrame || (callback => view.setTimeout(callback, 0)))(focus);
+    }
+    function activateComparisonCamera(id) { activateWorkspaceCamera(id, 'comparison', '.comparison-camera-button'); }
+    function activateYoloCoverageCamera(id) { activateWorkspaceCamera(id, 'yolo', '.yolo-camera-button'); }
     function onShellClick(event) {
+      const comparisonCamera = event.target.closest?.('[data-comparison-camera-id]');
+      if (comparisonCamera) { activateComparisonCamera(comparisonCamera.dataset.comparisonCameraId); return; }
+      const yoloCamera = event.target.closest?.('[data-yolo-camera-id]');
+      if (yoloCamera) { activateYoloCoverageCamera(yoloCamera.dataset.yoloCameraId); return; }
+      const fovColorMode = event.target.closest?.('[data-fov-color-mode]');
+      if (fovColorMode) { store.setFovColorMode(fovColorMode.dataset.fovColorMode); return; }
       const modeButton = event.target.closest?.('[data-mode]');
       if (modeButton) { store.setInteractionMode(modeButton.dataset.mode); return; }
       if (event.target.closest?.('#cancelPlacement')) { mapController.cancelInteraction(); return; }
@@ -502,5 +619,5 @@
     return publicApi;
   }
 
-  return {createAppController, defaultProject, tileSourceByKey, SENSOR_PRESETS, RESOLUTION_PRESETS};
+  return {createAppController, defaultProject, tileSourceByKey, SENSOR_PRESETS, RESOLUTION_PRESETS, buildCameraComparison: Comparison.buildCameraComparison, buildYoloCoverage: YoloCoverage.buildYoloCoverage};
 }));

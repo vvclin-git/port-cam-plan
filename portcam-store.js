@@ -21,6 +21,7 @@
   const PANEL_ALIASES = {cameraInspector: 'inspector', resultDrawer: 'result', bottomWorkspace: 'workspace'};
   const RESULT_TABS = new Set(['observation', 'target']);
   const WORKSPACE_TABS = new Set(['targets', 'comparison', 'yolo']);
+  const FOV_COLOR_MODES = new Set(['camera', 'coverage']);
 
   function createProjectStore(initialProject, options) {
     const opts = options || {};
@@ -51,6 +52,7 @@
           panelOpen: {inspector: true, result: false, mapSettings: false, workspace: false},
           activeResultTab: 'observation',
           activeWorkspaceTab: 'comparison',
+          fovColorMode: 'coverage',
           targetSearchQuery: '', cameraSearchQuery: '', objectManagerTab: 'cameras',
           focusedEntity: cameraOrder[0] ? {kind: 'camera', id: cameraOrder[0]} : targetOrder[0] ? {kind: 'target', id: targetOrder[0]} : null,
           inspectorTab: 'details'
@@ -85,6 +87,7 @@
         panelOpen: {...(ui.panelOpen || {}), inspector: ui.panelOpen?.inspector !== false, result: Boolean(ui.panelOpen?.result), mapSettings: Boolean(ui.panelOpen?.mapSettings), workspace: Boolean(ui.panelOpen?.workspace)},
         activeResultTab: RESULT_TABS.has(ui.activeResultTab) ? ui.activeResultTab : 'observation',
         activeWorkspaceTab: ui.activeWorkspaceTab === 'yolo' ? 'yolo' : 'comparison',
+        fovColorMode: FOV_COLOR_MODES.has(ui.fovColorMode) ? ui.fovColorMode : 'coverage',
         targetSearchQuery: typeof ui.targetSearchQuery === 'string' ? ui.targetSearchQuery : ''
         , cameraSearchQuery: typeof ui.cameraSearchQuery === 'string' ? ui.cameraSearchQuery : '',
         objectManagerTab: ui.objectManagerTab === 'targets' ? 'targets' : 'cameras',
@@ -121,6 +124,10 @@
       if (!WORKSPACE_TABS.has(tab)) throw new Error(`invalid workspace tab: ${tab}`);
       if (state.uiState.activeWorkspaceTab !== tab) { state.uiState.activeWorkspaceTab = tab; emit(); }
     }
+    function setFovColorMode(mode) {
+      const value = mode === 'camera' ? 'camera' : 'coverage';
+      if (state.uiState.fovColorMode !== value) { state.uiState.fovColorMode = value; emit(); }
+    }
     function setTargetSearchQuery(query) {
       const value = String(query == null ? '' : query);
       if (state.uiState.targetSearchQuery !== value) { state.uiState.targetSearchQuery = value; emit(); }
@@ -137,7 +144,7 @@
       if (!usingPreview && cached && cached.cameraRevision === camera.revision && cached.targetRevision === target.revision && cached.calculatorModelVersion === CALCULATOR_MODEL_VERSION) return clone(cached);
       try { const observation = Core.computeObservation(camera, target); const entry = Core.buildObservationCacheEntry(camera, target, observation); if (!usingPreview) state.observationsByKey[key] = entry; return clone(entry); } catch (error) { const failed = {key, cameraId, targetId, cameraRevision: camera.revision, targetRevision: target.revision, calculatorModelVersion: CALCULATOR_MODEL_VERSION, generatedAt: new Date().toISOString(), calculationState: 'failed', visibilityState: 'unknown', error: error.message}; if (!usingPreview) state.observationsByKey[key] = failed; return clone(failed); }
     }
-    return {getState: publicState, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }, toCameraProject() { return clone(canonical(state)); }, isDirty, addCamera, addTarget, patchCamera(id, patch, label) { return patchEntity('camera', id, patch, label); }, patchTarget(id, patch, label) { return patchEntity('target', id, patch, label); }, patchSettings(patch, label) { return transaction(label || 'settings-patch', () => { Object.assign(state.settings, clone(patch)); }); }, removeCamera(id) { return removeEntity('camera', id); }, removeTarget(id) { return removeEntity('target', id); }, duplicateCamera(id) { return duplicateEntity('camera', id); }, duplicateTarget(id) { return duplicateEntity('target', id); }, selectCamera(id) { setSelection('camera', id); }, selectTarget(id) { setSelection('target', id); }, setFocusedEntity, setInteractionMode, setPanelOpen, setActiveResultTab, setActiveWorkspaceTab, setObjectManagerTab, setInspectorTab, setTargetSearchQuery, setCameraSearchQuery, setSearchQuery: setTargetSearchQuery, beginPreview, cancelPreview, commitPreview, getCamera(id, includePreview) { const value = getEntity('camera', id, includePreview); return value && clone(value); }, getTarget(id, includePreview) { const value = getEntity('target', id, includePreview); return value && clone(value); }, getObservation, markSaved() { baseline = canonical(state); emit(); }, undo() { if (!historyIndex) return false; restore(history[--historyIndex].before); emit(); return true; }, redo() { if (historyIndex >= history.length) return false; restore(history[historyIndex++].after); emit(); return true; }};
+    return {getState: publicState, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }, toCameraProject() { return clone(canonical(state)); }, isDirty, addCamera, addTarget, patchCamera(id, patch, label) { return patchEntity('camera', id, patch, label); }, patchTarget(id, patch, label) { return patchEntity('target', id, patch, label); }, patchSettings(patch, label) { return transaction(label || 'settings-patch', () => { Object.assign(state.settings, clone(patch)); }); }, removeCamera(id) { return removeEntity('camera', id); }, removeTarget(id) { return removeEntity('target', id); }, duplicateCamera(id) { return duplicateEntity('camera', id); }, duplicateTarget(id) { return duplicateEntity('target', id); }, selectCamera(id) { setSelection('camera', id); }, selectTarget(id) { setSelection('target', id); }, setFocusedEntity, setInteractionMode, setPanelOpen, setActiveResultTab, setActiveWorkspaceTab, setFovColorMode, setObjectManagerTab, setInspectorTab, setTargetSearchQuery, setCameraSearchQuery, setSearchQuery: setTargetSearchQuery, beginPreview, cancelPreview, commitPreview, getCamera(id, includePreview) { const value = getEntity('camera', id, includePreview); return value && clone(value); }, getTarget(id, includePreview) { const value = getEntity('target', id, includePreview); return value && clone(value); }, getObservation, markSaved() { baseline = canonical(state); emit(); }, undo() { if (!historyIndex) return false; restore(history[--historyIndex].before); emit(); return true; }, redo() { if (historyIndex >= history.length) return false; restore(history[historyIndex++].after); emit(); return true; }};
   }
   return {createProjectStore};
 }));

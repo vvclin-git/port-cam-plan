@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>港區 AI 攝影機規劃工具 · App Shell</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="./leaflet/leaflet.css" />
   <link rel="stylesheet" href="./app.css" />
 </head>
@@ -11,7 +12,7 @@
   <div class="app-shell" id="appShell">
     <header class="top-bar">
       <div class="brand">
-        <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 3</span></div>
+      <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 4.2</span></div>
         <div class="brand-subtitle">Camera planning · spherical-v1 · Leaflet</div>
       </div>
       <div class="project-meta"><span class="project-name" id="projectName">Untitled project</span><span class="dirty-badge" id="dirtyState">Clean baseline</span></div>
@@ -60,12 +61,12 @@
           </div>
           <div class="instruction-banner" id="instructionBanner" hidden role="status" aria-live="polite"><span id="instructionText"></span><button id="cancelPlacement" type="button" aria-label="取消地圖放置">Esc</button></div>
           <div class="map-status" id="status" role="status" aria-live="polite">Navigate：選取 Camera 後可拖曳未鎖定 marker。</div>
-          <div class="map-legend" aria-label="Map legend"><div class="map-legend-title">Planning envelope</div><div class="legend-item"><span class="legend-swatch" style="background:#15803d"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:#a16207"></span>16–32 px</div><div class="legend-item"><span class="legend-swatch" style="background:#c2410c"></span>8–16 px</div><div class="legend-item"><span class="legend-swatch" style="background:#b42318"></span>&lt; 8 px</div><div class="tiny">實際 FOV 與 pixel-distance bands；不是精確四角 ray projection。</div></div>
+          <div class="map-legend" id="mapLegend" aria-label="Map legend"><div class="map-legend-title">Pixel coverage</div><div class="legend-item"><span class="legend-swatch" style="background:#15803d"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:#a16207"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:#c2410c"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:#b42318"></span>&lt; 8 px</div><div class="tiny">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div class="tiny">Based on Project planning reference size.</div></div>
           <div class="map-error" id="mapError"><div><b>地圖或 Leaflet 資源載入失敗。</b><br />請確認專案的 <code>leaflet/</code> 目錄完整部署，並使用 localhost 開啟。</div></div>
         </section>
 
         <section class="bottom-workspace" id="bottomWorkspace" aria-label="Bottom workspace">
-          <div class="workspace-bar"><strong>Workspace</strong><span>Phase 4 analysis</span><button class="workspace-toggle" id="workspaceToggle" type="button" aria-expanded="false" aria-controls="workspaceContent">Expand</button></div>
+          <div class="workspace-bar"><strong>Workspace</strong><span class="workspace-summary" id="workspaceSummary">Current Target: — · 0 enabled Cameras · 0 disabled excluded</span><button class="workspace-toggle" id="workspaceToggle" type="button" aria-expanded="false" aria-controls="workspaceContent">Expand</button></div>
           <div class="workspace-tabs" id="workspaceTabs" role="tablist" aria-label="Workspace tabs"><button class="workspace-tab" type="button" data-workspace-tab="comparison" aria-selected="true">Camera Comparison</button><button class="workspace-tab" type="button" data-workspace-tab="yolo" aria-selected="false">YOLO Coverage</button></div>
           <div class="workspace-content" id="workspaceContent"><div class="empty-next"><strong>Coming next phase</strong>展開後可查看 Phase 4 預留工作區。</div></div>
         </section>
@@ -91,6 +92,8 @@
   <script src="./portcam-core.js"></script>
   <script src="./portcam-store.js"></script>
   <script src="./portcam-map.js"></script>
+  <script src="./portcam-comparison.js"></script>
+  <script src="./portcam-yolo-coverage.js"></script>
   <script src="./leaflet/leaflet.js"></script>
   <script src="./portcam-ui.js"></script>
   <script>
