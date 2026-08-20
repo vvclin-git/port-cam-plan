@@ -2,37 +2,18 @@
 
 ## Status
 
-- Phase 4.2 implementation is complete in the working tree; no commit, reset, push, or remote mutation was performed.
-- The implementation checkout is `D:\Workplace\port-cam-plan` on branch `codex/multi-cam`. The user-facing C: OneDrive link currently exposes only `UI_ARCHITECTURE.md`; it is not the Git checkout.
-- Phase 4.1 Comparison changes remain intact and uncommitted.
+- Phase 4.2 UI bugfix is complete; commit and push status is reported by the repository history and final handoff.
+- The implementation checkout is `D:\Workplace\port-cam-plan` on branch `codex/multi-cam`. The user-facing C: OneDrive link is not the Git checkout.
+- Current clean baseline before this bugfix: `379f94f` — `Add YOLO coverage and FOV color modes`.
+- Phase 4.1 and Phase 4.2 implementation changes are already represented by the committed baseline above; this handoff does not describe them as uncommitted.
 
-## Phase 4.1 baseline preserved before editing
+## Bugfix baseline
 
-The baseline was captured before any Phase 4.2 edit:
+The bugfix was started from the clean baseline:
 
-- `HEAD 5585820` — `Clarify independent observation context`.
+- `HEAD 379f94f` — `Add YOLO coverage and FOV color modes`.
 - Branch: `codex/multi-cam`, tracking `origin/codex/multi-cam`.
-- No staged changes.
-- Pre-existing status:
-
-  ```text
-   M app.css
-   M index.html
-   M portcam-ui.js
-  ?? docs/PHASE_4_1_HANDOFF.md
-  ?? output/playwright/phase41-comparison-1920-dpr2.png
-  ?? portcam-comparison.js
-  ?? test_camera_comparison.js
-  ```
-
-- Pre-existing tracked diff: `app.css` 21 lines, `index.html` 6 lines, and `portcam-ui.js` 74 lines changed (`88 insertions`, `13 deletions`). The complete pre-edit diff was inspected with `git diff --no-ext-diff --binary`; the untracked Phase 4.1 files above were inspected separately and preserved.
-- Phase 4.1 baseline command, run before Phase 4.2 edits:
-
-  ```text
-  node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js test_camera_comparison.js
-  ```
-
-  Result: **28/28 passed**.
+- Working tree was clean before editing; no staged changes or unrelated baseline changes were present.
 
 ## YOLO Coverage contract
 
@@ -52,22 +33,24 @@ The baseline was captured before any Phase 4.2 edit:
 - `uiState.fovColorMode` is `"coverage"` by default; invalid setter values fall back to `"coverage"`.
 - `setFovColorMode(mode)` is UI-only: it is excluded from `camera-project/1.0` and `camera-scene/1.1`, does not increment revision, history, or dirty state, and Undo/Redo does not change it.
 - The only segmented control is in the YOLO Coverage toolbar. Map Settings has no duplicate control.
-- `camera` mode renders visible Camera envelopes with identity colors, stronger Active Camera outline/fill, no pixel bands, and an identity legend.
-- `coverage` mode renders identity-colored FOV boundaries/centerline, and only the enabled Active Camera receives up to four existing-palette bands: green, yellow, orange, and red (`< 8 px`). Non-active Cameras retain only low-intensity identity outlines.
-- Bands use `planningTargetHeightM` and are clipped to the existing near/far envelope, horizon distance, and 30 km maximum. Hidden, disabled, draft, or unlocated Active Cameras do not render bands.
+- `camera` mode renders every visible, placed Camera with its identity-colored boundary/centerline/fill; the enabled Active Camera receives stronger outline/fill styling, disabled Cameras remain low-opacity neutral dashed outlines, no Camera receives pixel bands, and the whole map legend is hidden.
+- `coverage` mode renders every enabled, visible, placed Camera with neutral FOV boundary/centerline and no identity fill; every eligible Camera receives its complete clipped green, yellow, orange, and red (`< 8 px`) bands. Active Camera emphasis is limited to weight, opacity, and layer order.
+- Bands use `planningTargetHeightM` and are clipped to the existing near/far envelope, horizon distance, and 30 km maximum. Hidden, disabled, draft, or unlocated Cameras do not render coverage bands; disabled Cameras retain only the neutral dashed outline.
+- The Pixel coverage legend is Coverage-only. Its title row is a Pointer Events drag handle with pointer capture, Escape rollback, 8/24 px keyboard movement, Reset, session-local coordinates, and workspace-bound clamping above the Leaflet zoom control by default. Camera colors hides the entire legend.
 
 ## Changed files
 
 - `index.html` — loads the pure YOLO module, gives the legend a mount point, and replaces the Phase 4.1 placeholder wiring/version label.
-- `app.css` — YOLO toolbar, summary, fixed-column local-scroll table, active-row state, segmented control, compact responsive layout, and dynamic legend support.
+- `app.css` — YOLO toolbar, summary, fixed-column local-scroll table, active-row state, segmented control, compact responsive layout, and bounded draggable legend styles.
 - `portcam-store.js` — UI-only `fovColorMode` default/fallback/setter.
-- `portcam-map.js` — four clipped coverage ranges, red band, mode-aware rendering, and identity/coverage color constants.
-- `portcam-ui.js` — YOLO derivation/rendering, summary/table/empty states, mode control, dynamic legend, and click/Enter/Space Camera activation.
+- `portcam-map.js` — four clipped coverage ranges, red band, mutually exclusive mode branches, neutral Coverage FOV geometry, and identity/coverage color constants.
+- `portcam-ui.js` — YOLO derivation/rendering, summary/table/empty states, mode control, session-local draggable legend controller, and click/Enter/Space Camera activation.
 - `portcam-yolo-coverage.js` — pure tier/status/count derivation.
 - `test_yolo_coverage.js` — tier boundaries, visibility/status rules, enabled/hidden filtering, summaries, disabled Target behavior, and Comparison reuse.
 - `test_portcam_store.js` — UI-only mode isolation and Undo/Redo behavior.
-- `test_portcam_map.js` — four-band clipping and Camera colors mode.
-- `output/playwright/phase42-yolo-1366.png`, `output/playwright/phase42-yolo-1920.png`, `output/playwright/phase42-yolo-1920-dpr2.png` — browser evidence.
+- `test_portcam_map.js` — four-band clipping, all-eligible-Camera coverage, exclusion rules, neutral Coverage geometry, and Camera colors mode.
+- `output/playwright/phase42-yolo-1366.png`, `output/playwright/phase42-yolo-1920.png`, `output/playwright/phase42-yolo-1920-dpr2.png` — Phase 4.2 browser evidence.
+- `output/playwright/phase42-ui-bugfix-1366.png`, `output/playwright/phase42-ui-bugfix-1920.png`, `output/playwright/phase42-ui-bugfix-1920-dpr2.png` — UI bugfix browser evidence.
 
 ## Verification
 
@@ -77,7 +60,7 @@ Final Node suite:
 node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js test_camera_comparison.js test_yolo_coverage.js
 ```
 
-Result: **35/35 passed**. This includes the original Phase 4.1 28 tests.
+Result: **35/35 passed**. This includes the committed Phase 4.1 and Phase 4.2 baseline coverage.
 
 Focused checks also passed:
 
@@ -96,12 +79,14 @@ Python tests were not run because no Python code or Scene consumer contract chan
 ## Browser smoke evidence
 
 - Host: `http://127.0.0.1:8765/index.html`.
-- Browser: real Microsoft Edge through Playwright CLI, isolated persistent temporary profile. The skill's Bash wrapper could not start on this Windows environment, so the same bundled `@playwright/cli` was run through direct `npx`.
-- In-memory smoke data exercised four visible tier Cameras, Outside FOV, Unavailable draft Camera, and one disabled excluded Camera. No project file or analysis result was persisted.
+- Browser: real Microsoft Edge through Playwright CLI, isolated persistent temporary profiles. The skill's Bash wrapper is not usable on this Windows environment, so the same bundled `@playwright/cli` was run through direct `npx`.
+- In-memory smoke data exercised two overlapping placed Cameras, a Current Target, and temporary map/workspace state. No project file, localStorage entry, or analysis result was persisted.
 - Verified YOLO tab is no longer a placeholder; summary counts and rows agree; hidden enabled Camera is included; disabled Target keeps rows Unavailable; no Target/no enabled Camera empty states render; mode switching updates bands and legend; Camera row click, Enter, and Space select the Active Camera while preserving Current Target, YOLO tab, and expanded Workspace.
 - Verified Camera optics, Target position, and Camera enabled-state changes refresh the table/summary/map immediately; temporary browser changes were undone.
-- Verified Camera colors has zero bands and identity legend; Pixel coverage has four bands for the Active Camera and no bands for non-active Cameras. Target marker click remained active while SVG analysis paths reported `pointer-events: none`.
-- Console after the interactions: **0 errors, 0 warnings**.
+- Verified Camera colors has zero bands for both Cameras and hides the entire legend; Pixel coverage has four bands for both Cameras with neutral FOV geometry and no identity fill.
+- Verified mouse drag, `pointerType="touch"` Pointer Events drag, keyboard movement (8 px and Shift 24 px contract), Reset, Escape rollback, mode-switch position retention, and reload-to-default behavior. Legend interaction did not change Store revision/history/dirty state and did not activate map placement.
+- Verified default Legend positioning above Leaflet zoom control, 8 px workspace bounds, resize clamping, 1366×768, 1920×1080, and 1920×1080 DPR2. Body had no overflow in all three required layouts.
+- Console after the interactions: **0 errors, 0 warnings** in both normal and DPR2 Edge sessions.
 - Body/layout checks:
   - 1366×768: no body overflow; table overflow remained local to its table scroll container.
   - 1920×1080: no body overflow.
@@ -112,12 +97,15 @@ Screenshots:
 - `output/playwright/phase42-yolo-1366.png`
 - `output/playwright/phase42-yolo-1920.png`
 - `output/playwright/phase42-yolo-1920-dpr2.png`
+- `output/playwright/phase42-ui-bugfix-1366.png`
+- `output/playwright/phase42-ui-bugfix-1920.png`
+- `output/playwright/phase42-ui-bugfix-1920-dpr2.png`
 
 ## Deviations and remaining acceptance gates
 
 - Browser data was deterministic in-memory smoke data; it was not saved as a project fixture.
 - The default unrequested 1280 viewport places the existing inspector overlay over the workspace; required 1366/1920 acceptance viewports were verified separately.
-- Physical/manual Phase 3 gates remain separate and are not claimed complete: physical wheel-detent behavior; physical Camera/Target drag parity and lock behavior; physical Target click/drag while over selected-Camera FOV/YOLO geometry; NVDA/screen-reader review; base-map/network and Surface water/land/unknown visual review; Scene download behavior and downstream Scene consumer handoff.
+- Physical/manual gates remain separate and are not claimed complete: physical wheel-detent behavior; physical Camera/Target drag parity and lock behavior; physical stylus hardware review beyond the real-browser `pointerType="touch"` path; physical Target click/drag while over selected-Camera FOV/YOLO geometry; NVDA/screen-reader review; base-map/network and Surface water/land/unknown visual review; Scene download behavior and downstream Scene consumer handoff.
 
 ## Next-phase entry conditions
 

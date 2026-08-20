@@ -61,7 +61,7 @@
           </div>
           <div class="instruction-banner" id="instructionBanner" hidden role="status" aria-live="polite"><span id="instructionText"></span><button id="cancelPlacement" type="button" aria-label="取消地圖放置">Esc</button></div>
           <div class="map-status" id="status" role="status" aria-live="polite">Navigate：選取 Camera 後可拖曳未鎖定 marker。</div>
-          <div class="map-legend" id="mapLegend" aria-label="Map legend"><div class="map-legend-title">Pixel coverage</div><div class="legend-item"><span class="legend-swatch" style="background:#15803d"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:#a16207"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:#c2410c"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:#b42318"></span>&lt; 8 px</div><div class="tiny">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div class="tiny">Based on Project planning reference size.</div></div>
+          <div class="map-legend" id="mapLegend" aria-label="Pixel coverage legend" hidden></div>
           <div class="map-error" id="mapError"><div><b>地圖或 Leaflet 資源載入失敗。</b><br />請確認專案的 <code>leaflet/</code> 目錄完整部署，並使用 localhost 開啟。</div></div>
         </section>
 

@@ -86,6 +86,11 @@
     let mapController = args.mapController || null;
     let contextRenderKey = null;
     let overflowMenu = null;
+    let legendMarkupKey = null;
+    let legendClampFrame = null;
+    const legendPosition = {left: null, top: null};
+    let legendPositionUserSet = false;
+    let legendDrag = null;
     const labelVisibility = {camera: true, target: true};
 
     const els = {
@@ -94,7 +99,7 @@
       inspector: $('inspectorPanel'),
       inspectorContent: $('inspectorContent'), resultContent: $('contextDynamicContent'), contextTabs: $('contextInspectorTabs'),
       resultTabs: null, workspace: $('bottomWorkspace'), workspaceContent: $('workspaceContent'), workspaceTabs: $('workspaceTabs'), workspaceSummary: $('workspaceSummary'),
-      mapLegend: $('mapLegend'),
+      mapLegend: $('mapLegend'), mapWorkspace: rootElement.querySelector?.('.map-workspace'),
       projectName: $('projectName'), dirty: $('dirtyState'), undo: $('undoButton'), redo: $('redoButton'),
       status: $('status'), mapError: $('mapError'), instruction: $('instructionBanner'), instructionText: $('instructionText'),
       mapSettingsPopover: $('mapSettingsPopover'), mapSettingsToggle: $('mapSettingsToggle'),
@@ -122,6 +127,7 @@
     function scheduleInvalidate() {
       if (!map || !map.invalidateSize) return;
       clearTimeout(resizeTimer);
+      scheduleLegendClamp();
       const frame = view.requestAnimationFrame || (callback => view.setTimeout(callback, 0));
       frame(() => { if (!destroyed) map.invalidateSize({pan: false}); });
       resizeTimer = view.setTimeout(() => { if (!destroyed) map.invalidateSize({pan: false}); }, 260);
@@ -381,21 +387,121 @@
       if (els.surfaceState) els.surfaceState.textContent = surfaceLoadState === 'ready' ? '已載入' : surfaceLoadState === 'failed' ? '無法判定' : '載入中';
       if (els.surfaceHelp) els.surfaceHelp.textContent = surfaceLoadState === 'ready' ? '關閉視覺圖層不會停用 water／land／unknown 點擊分類。' : surfaceLoadState === 'failed' ? '請用 localhost 啟動；既有地圖與 Camera 計算仍可使用。' : '固定 GeoJSON 載入中。';
     }
+    function legendMetrics() {
+      const workspace = els.mapWorkspace, legend = els.mapLegend;
+      if (!workspace || !legend || legend.hidden) return null;
+      const workspaceRect = workspace.getBoundingClientRect?.() || {width: workspace.clientWidth, height: workspace.clientHeight, left: 0, top: 0, right: workspace.clientWidth, bottom: workspace.clientHeight};
+      const legendRect = legend.getBoundingClientRect?.() || {width: legend.offsetWidth, height: legend.offsetHeight};
+      const width = Math.max(0, Number(workspace.clientWidth) || Number(workspaceRect.width) || 0);
+      const height = Math.max(0, Number(workspace.clientHeight) || Number(workspaceRect.height) || 0);
+      const legendWidth = Math.max(0, Number(legend.offsetWidth) || Number(legendRect.width) || 0);
+      const legendHeight = Math.max(0, Number(legend.offsetHeight) || Number(legendRect.height) || 0);
+      return {workspace, legend, workspaceRect, width, height, legendWidth, legendHeight};
+    }
+    function legendDefaultPosition(metrics) {
+      const zoom = metrics.workspace.querySelector?.('.leaflet-control-zoom');
+      let bottomReserve = 56;
+      if (zoom?.getBoundingClientRect) {
+        const zoomRect = zoom.getBoundingClientRect();
+        const zoomTop = Number(zoomRect.top) - Number(metrics.workspaceRect.top || 0);
+        if (Number.isFinite(zoomTop)) bottomReserve = Math.max(8, metrics.height - zoomTop + 8);
+      }
+      const top = zoom?.getBoundingClientRect ? (Number(zoom.getBoundingClientRect().top) - Number(metrics.workspaceRect.top || 0) - metrics.legendHeight - 8) : metrics.height - metrics.legendHeight - bottomReserve;
+      return {left: 8, top};
+    }
+    function clampLegendPosition(forceDefault = false) {
+      const metrics = legendMetrics();
+      if (!metrics || !metrics.width || !metrics.height) return;
+      const maxLeft = Math.max(8, metrics.width - metrics.legendWidth - 8);
+      const maxTop = Math.max(8, metrics.height - metrics.legendHeight - 8);
+      const clamp = (value, max) => Math.max(8, Math.min(max, Number(value)));
+      if (forceDefault || !legendPositionUserSet || legendPosition.left == null || legendPosition.top == null) {
+        const position = legendDefaultPosition(metrics);
+        legendPosition.left = clamp(position.left, maxLeft);
+        legendPosition.top = clamp(position.top, maxTop);
+      } else {
+        legendPosition.left = clamp(legendPosition.left, maxLeft);
+        legendPosition.top = clamp(legendPosition.top, maxTop);
+      }
+      metrics.legend.style.left = `${Math.round(legendPosition.left)}px`;
+      metrics.legend.style.top = `${Math.round(legendPosition.top)}px`;
+    }
+    function scheduleLegendClamp() {
+      if (legendClampFrame != null) return;
+      const frame = view.requestAnimationFrame || (callback => view.setTimeout(callback, 0));
+      legendClampFrame = frame(() => { legendClampFrame = null; if (!destroyed) clampLegendPosition(); });
+    }
+    function finishLegendDrag() {
+      if (!legendDrag) return;
+      try { legendDrag.handle.releasePointerCapture?.(legendDrag.pointerId); } catch (_) { /* capture may already be released */ }
+      els.mapLegend?.classList.remove('is-dragging');
+      legendDrag = null;
+    }
+    function cancelLegendDrag() {
+      if (!legendDrag) return false;
+      legendPosition.left = legendDrag.startLeft;
+      legendPosition.top = legendDrag.startTop;
+      finishLegendDrag();
+      clampLegendPosition();
+      return true;
+    }
+    function onLegendPointerDown(event) {
+      const handle = event.target.closest?.('[data-legend-handle]');
+      if (!handle || !els.mapLegend?.contains?.(handle) || event.isPrimary === false || (event.button != null && event.button !== 0)) {
+        event.stopPropagation();
+        return;
+      }
+      clampLegendPosition();
+      event.preventDefault(); event.stopPropagation();
+      legendDrag = {pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startLeft: legendPosition.left, startTop: legendPosition.top, handle};
+      els.mapLegend.classList.add('is-dragging');
+      handle.focus?.({preventScroll: true});
+      try { handle.setPointerCapture?.(event.pointerId); } catch (_) { /* synthetic events may not have an active pointer */ }
+    }
+    function onLegendPointerMove(event) {
+      if (!legendDrag || legendDrag.pointerId !== event.pointerId) return;
+      event.preventDefault(); event.stopPropagation();
+      legendPosition.left = legendDrag.startLeft + event.clientX - legendDrag.startX;
+      legendPosition.top = legendDrag.startTop + event.clientY - legendDrag.startY;
+      legendPositionUserSet = true;
+      clampLegendPosition();
+    }
+    function onLegendPointerUp(event) {
+      if (!legendDrag || legendDrag.pointerId !== event.pointerId) { event.stopPropagation(); return; }
+      event.preventDefault(); event.stopPropagation(); finishLegendDrag(); clampLegendPosition();
+    }
+    function onLegendClick(event) {
+      event.stopPropagation();
+      const reset = event.target.closest?.('[data-legend-reset]');
+      if (reset && els.mapLegend?.contains?.(reset)) { event.preventDefault(); legendPosition.left = null; legendPosition.top = null; legendPositionUserSet = false; clampLegendPosition(true); }
+    }
+    function onLegendKeydown(event) {
+      const handle = event.target.closest?.('[data-legend-handle]');
+      if (event.key === 'Escape' && legendDrag) { event.preventDefault(); event.stopPropagation(); cancelLegendDrag(); return; }
+      if (!handle || !els.mapLegend?.contains?.(handle)) return;
+      const delta = event.shiftKey ? 24 : 8;
+      const moves = {ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta]};
+      if (!moves[event.key]) return;
+      event.preventDefault(); event.stopPropagation(); clampLegendPosition();
+      legendPositionUserSet = true;
+      legendPosition.left += moves[event.key][0]; legendPosition.top += moves[event.key][1]; clampLegendPosition();
+    }
     function renderMapLegend(state) {
       if (!els.mapLegend) return;
       const mode = state.uiState.fovColorMode === 'camera' ? 'camera' : 'coverage';
       if (mode === 'camera') {
-        const cameras = state.cameraOrder.map(id => state.camerasById[id]).filter(camera => camera && camera.visible !== false && camera.lifecycle !== 'draft-unplaced' && camera.position);
-        const items = cameras.map(camera => {
-          const color = cameraColor(camera, state.cameraOrder);
-          const active = camera.id === state.uiState.selectedCameraId;
-          return `<div class="legend-item"><span class="legend-swatch" style="background:${escapeHtml(color)}"></span><span>${escapeHtml(camera.name || camera.id)}${active ? ' · Active Camera' : ''}</span></div>`;
-        }).join('');
-        els.mapLegend.innerHTML = `<div class="map-legend-title">Camera identity</div>${items || '<div class="tiny">No visible Cameras.</div>'}<div class="tiny map-legend-help">Each visible Camera uses its identity color. Active Camera has stronger outline/fill.</div>`;
+        finishLegendDrag();
+        els.mapLegend.hidden = true;
         return;
       }
+      els.mapLegend.hidden = false;
       const referenceSize = comparisonNumber(state.settings.planningTargetHeightM);
-      els.mapLegend.innerHTML = `<div class="map-legend-title">Pixel coverage</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.robust}"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.usable}"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.difficult}"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.notRecommended}"></span>&lt; 8 px</div><div class="tiny map-legend-help">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div class="tiny map-legend-help">Based on Project planning reference size${referenceSize === null ? '' : ` (${referenceSize.toFixed(1)} m)`}.</div>`;
+      const markupKey = `coverage:${referenceSize == null ? '' : referenceSize}`;
+      if (legendMarkupKey !== markupKey) {
+        els.mapLegend.innerHTML = `<button class="map-legend-title" type="button" data-legend-handle aria-label="Drag Pixel coverage legend" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">Pixel coverage</button><div class="map-legend-content"><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.robust}"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.usable}"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.difficult}"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.notRecommended}"></span>&lt; 8 px</div><div class="tiny map-legend-help">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div class="tiny map-legend-help">Based on Project planning reference size${referenceSize === null ? '' : ` (${referenceSize.toFixed(1)} m)`}.</div><button class="action-button map-legend-reset" type="button" data-legend-reset>重設位置</button></div>`;
+        legendMarkupKey = markupKey;
+      }
+      clampLegendPosition();
     }
     function renderContextInspector(state) {
       const focused = state.uiState.focusedEntity, observation = state.uiState.inspectorTab === 'observation';
@@ -596,7 +702,7 @@
       if (event.target.closest?.('#closeMapSettings')) { setPanel('mapSettings', false); return; }
     }
     function onGlobalClick(event) { if (overflowMenu && !event.target.closest?.('.manager-overflow-menu, [data-entity-overflow]')) closeOverflowMenu(); if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
-    function onKeydown(event) { if (event.key !== 'Escape') return; if (overflowMenu) { closeOverflowMenu({restoreFocus: true}); return; } const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { mapController.cancelInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
+    function onKeydown(event) { if (event.key !== 'Escape') return; if (legendDrag && cancelLegendDrag()) { event.preventDefault(); event.stopPropagation(); return; } if (overflowMenu) { closeOverflowMenu({restoreFocus: true}); return; } const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { mapController.cancelInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
     function onInput(event) { const element = event.target; if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
     function onChange(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
@@ -604,17 +710,18 @@
     function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); }
 
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraRailItems, 'scroll', () => closeOverflowMenu()); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
+    listen(els.mapLegend, 'pointerdown', onLegendPointerDown); listen(els.mapLegend, 'pointermove', onLegendPointerMove); listen(els.mapLegend, 'pointerup', onLegendPointerUp); listen(els.mapLegend, 'pointercancel', onLegendPointerUp); listen(els.mapLegend, 'click', onLegendClick); listen(els.mapLegend, 'keydown', onLegendKeydown);
     listen(els.inspector, 'click', onInspectorClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
     listen($('addCamera'), 'click', () => { const state = store.getState(); const id = store.addCamera({name: `Camera ${state.cameraOrder.length + 1}`, lifecycle: 'draft-unplaced', visible: true, enabled: true, locked: false, ...DEFAULT_CAMERA}); store.selectCamera(id); store.setInteractionMode('place-camera'); showDetails('camera', id); });
     listen($('addTargetManager'), 'click', () => { store.setInteractionMode('place-target'); });
     listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo()); listen($('openInspector'), 'click', showInspector);
-    if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); }
+    if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); if (els.mapWorkspace) resizeObserver.observe(els.mapWorkspace); }
     listen(view, 'resize', scheduleInvalidate);
     loadSurface();
     render(store.getState());
     scheduleInvalidate();
 
-    const publicApi = {store, mapController, render, destroy() { if (destroyed) return; destroyed = true; closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
+    const publicApi = {store, mapController, render, destroy() { if (destroyed) return; destroyed = true; finishLegendDrag(); closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); if (legendClampFrame != null && view.cancelAnimationFrame) view.cancelAnimationFrame(legendClampFrame); legendClampFrame = null; mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
     const testWindow = view || root; testWindow.projectStoreForTest = store; testWindow.mapControllerForTest = mapController; testWindow.cameraSceneExportForTest = {buildCameraScene: publicApi.buildCameraScene, serializeCameraScene: publicApi.serializeCameraScene}; testWindow.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry}; testWindow.cameraMarkerForTest = {getLatLng() { const id = selectedCameraId(); const snapshot = id && mapController.getCameraLayerSnapshot(id); return snapshot?.markerPosition && L?.latLng ? L.latLng(snapshot.markerPosition.lat, snapshot.markerPosition.lng) : snapshot?.markerPosition || null; }};
     return publicApi;
   }

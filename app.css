@@ -102,10 +102,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .map-status { right: 14px; left: auto; transform: none; bottom: 14px; max-width: 360px; color: var(--text); background: rgba(255,255,255,.94); border: 1px solid var(--line); }
 .map-error { position: absolute; inset: 0; z-index: 900; display: none; place-items: center; pointer-events: none; }
 .map-error > div { max-width: 520px; margin: 20px; padding: 15px; background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; box-shadow: var(--shadow); }
-.map-legend { position: absolute; left: 14px; bottom: 14px; z-index: 600; max-width: 220px; padding: 9px 11px; background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 8px; font-size: 11px; }
-.map-legend-title { margin-bottom: 5px; font-weight: 800; }
+.map-legend { position: absolute; left: 8px; top: 8px; bottom: auto; z-index: 600; display: flex; flex-direction: column; width: max-content; max-width: min(220px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: hidden; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(20,34,52,.14); font-size: 11px; pointer-events: auto; }
+.map-legend[hidden] { display: none; }
+.map-legend-title { flex: 0 0 auto; width: 100%; margin: 0; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 7px 7px 0 0; background: rgba(247,249,251,.96); color: var(--text); text-align: left; font-size: 11px; font-weight: 800; cursor: grab; user-select: none; touch-action: none; }
+.map-legend.is-dragging .map-legend-title { cursor: grabbing; }
+.map-legend-content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 9px 11px; user-select: text; touch-action: pan-y; }
 .legend-item { display: flex; align-items: center; gap: 7px; margin: 3px 0; }
 .legend-swatch { width: 15px; height: 9px; border-radius: 3px; }
+.map-legend-reset { width: 100%; min-height: 27px; margin-top: 8px; padding: 4px 8px; font-size: 10px; }
 
 .bottom-workspace { min-height: 48px; overflow: hidden; background: var(--panel); border-top: 1px solid var(--line); }
 .bottom-workspace.is-open { height: 300px; }
@@ -196,7 +200,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .yolo-tier-difficult { color: #a34700; font-weight: 800; }
 .yolo-tier-notRecommended { color: var(--red); font-weight: 800; }
 .yolo-table .status-badge { font-size: 10px; }
-.map-legend { max-height: calc(100% - 28px); overflow: auto; }
 .map-legend-help { margin-top: 5px; line-height: 1.35; }
 
 .inspector, .result-drawer { min-width: 0; min-height: 0; background: var(--panel); overflow: hidden; display: flex; flex-direction: column; }
@@ -306,7 +309,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .map-toolbar { left: 8px; top: 8px; max-width: calc(100% - 16px); overflow-x: auto; }
   .toolbar-button { padding: 6px 8px; font-size: 11px; white-space: nowrap; }
   .map-settings-anchor { top: 8px; right: 8px; }
-  .map-legend { left: 8px; bottom: 8px; }
+  .map-legend { left: 8px; }
   .target-list-root { min-width: 0; }
   .target-list-toolbar { align-items: stretch; flex-direction: column; gap: 4px; }
   .target-list-toolbar input { max-width: none; }

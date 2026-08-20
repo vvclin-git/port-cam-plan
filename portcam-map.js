@@ -145,12 +145,21 @@
       const near = Math.max(0, envelope.nearDistanceM || 0), far = Math.min(envelope.farDistanceM || horizon.distanceM, horizon.distanceM, 30000);
       if (far <= near) return;
       const geometryOptions = {pane: PANE_NAMES.analysis, interactive: false};
-      const poly = L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, near, far), {color, weight:selected ? 3 : 1.2, opacity:selected ? .95 : .42, fillColor:color, fillOpacity:selected ? .1 : .035, dashArray:camera.enabled === false ? '5,5' : null, ...geometryOptions}).addTo(record.group);
-      record.envelope.push(poly);
-      record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, far))], {color, weight:selected ? 1.4 : .8, opacity:selected ? .85 : .35, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
       const fovColorMode = state.uiState?.fovColorMode === 'camera' ? 'camera' : 'coverage';
-      if (selected && camera.enabled !== false && fovColorMode === 'coverage') {
-        coverageBandRanges(camera, state.settings).forEach(band => {
+      const cameraMode = fovColorMode === 'camera';
+      const enabled = camera.enabled !== false;
+      const emphasized = selected && enabled;
+      const neutralColor = '#566273';
+      if (cameraMode) {
+        const envelopeColor = enabled ? color : neutralColor;
+        const poly = L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, near, far), {color: envelopeColor, weight: emphasized ? 3 : 1.2, opacity: enabled ? (selected ? .95 : .42) : .24, fillColor: envelopeColor, fillOpacity: enabled ? (selected ? .1 : .035) : 0, dashArray: enabled ? null : '5,5', ...geometryOptions}).addTo(record.group);
+        record.envelope.push(poly);
+        record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, far))], {color: envelopeColor, weight: emphasized ? 1.4 : .8, opacity: enabled ? (selected ? .85 : .35) : .2, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
+      } else {
+        const poly = L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, near, far), {color: neutralColor, weight: emphasized ? 3 : 1.2, opacity: enabled ? (selected ? .95 : .42) : .24, fillColor: neutralColor, fillOpacity: 0, dashArray: enabled ? null : '5,5', ...geometryOptions}).addTo(record.group);
+        record.envelope.push(poly);
+        record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, far))], {color: neutralColor, weight: emphasized ? 1.4 : .8, opacity: enabled ? (selected ? .85 : .35) : .2, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
+        if (enabled) coverageBandRanges(camera, state.settings).forEach(band => {
           record.bands.push(L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, band.innerM, band.outerM), {color:band.color, weight:1, fillColor:band.color, fillOpacity:.16, ...geometryOptions}).addTo(record.group));
         });
       }

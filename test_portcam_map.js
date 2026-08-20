@@ -12,13 +12,14 @@ function fakeLeaflet() {
 }
 function fakeMap() { const layers=new Set(), events={}, panes={}, wheelListeners=new Set(), container={clientHeight:600, addEventListener(name, fn){if(name==='wheel') wheelListeners.add(fn);}, removeEventListener(name, fn){if(name==='wheel') wheelListeners.delete(fn);}, dispatchWheel(event){wheelListeners.forEach(fn=>fn(event));}}; let zoom=13; return {layers, events, panes, container, wheelListeners, options:{minZoom:10,maxZoom:16}, scrollWheelZoom:{disabled:false,disable(){this.disabled=true;}}, addLayer(layer){layers.add(layer); return this;}, removeLayer(layer){layers.delete(layer);}, hasLayer(layer){return layers.has(layer);}, on(name, fn){events[name]=fn;}, off(name){delete events[name];}, createPane(name){return panes[name]={style:{}};}, getPane(name){return panes[name];}, getContainer(){return container;}, getSize(){return {y:600};}, getZoom(){return zoom;}, setZoom(value){zoom=value;}, getMinZoom(){return 10;}, getMaxZoom(){return 16;}, setView(){}, fitBounds(){}}; }
 function markerFor(map, id) { for (const group of map.layers) for (const layer of group.layers || []) if (layer.__portcamEntityId === id) return layer; return null; }
+function analysisLayersFor(map, id) { for (const group of map.layers) { if ([...(group.layers || [])].some(layer => layer.__portcamEntityId === id)) return [...group.layers].filter(layer => layer.options?.pane === 'portcam-analysis-pane'); } return []; }
 const cam = (id, lat, extra={}) => ({id, name:id, position:{latitudeDeg:lat,longitudeDeg:120.28},heightM:20,headingDeg:90,tiltDownDeg:20,sensorWidthMm:7.2,sensorHeightMm:4.05,widthPx:2560,heightPx:1440,focalLengthMm:14,...extra});
 const target = (id, lat, extra={}) => ({id, name:id, position:{latitudeDeg:lat,longitudeDeg:120.281},lengthM:8,widthM:2.5,heightM:3,headingDeg:0,...extra});
 
 test('projection keeps three independent camera groups and undo restores marker geometry', () => {
   const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60),cam('b',22.61),cam('c',22.62)], targets:[]}, {idFactory:()=> 'generated'});
   const map=fakeMap(), controller=createMapController({map,leaflet:fakeLeaflet(),store}); const render=state=>controller.sync(state); store.subscribe(render); render(store.getState());
-  assert.equal(controller.getCameraLayerSnapshot('a').envelopeLayerCount, 1); assert.equal(controller.getCameraLayerSnapshot('b').bandLayerCount, 0);
+  assert.equal(controller.getCameraLayerSnapshot('a').envelopeLayerCount, 1); assert.ok(controller.getCameraLayerSnapshot('a').bandLayerCount > 0); assert.ok(controller.getCameraLayerSnapshot('b').bandLayerCount > 0);
   store.patchCamera('a',{position:{latitudeDeg:22.70,longitudeDeg:120.28}},'move'); assert.equal(controller.getCameraLayerSnapshot('a').markerPosition.lat,22.70);
   store.undo(); assert.equal(controller.getCameraLayerSnapshot('a').markerPosition.lat,22.60);
   store.patchCamera('b',{visible:false}); assert.equal(controller.getCameraLayerSnapshot('b').visible,false);
@@ -27,21 +28,34 @@ test('projection keeps three independent camera groups and undo restores marker 
   controller.destroy(); assert.equal(map.events.click, undefined);
 });
 
-test('coverage mode renders four clipped bands, while Camera colors renders identity FOV only', () => {
-  const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60,{tiltDownDeg:5}),cam('b',22.61,{tiltDownDeg:5})], targets:[]}, {idFactory:()=> 'generated'});
+test('Coverage and Camera colors are mutually exclusive for every eligible Camera', () => {
+  const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60,{tiltDownDeg:5}),cam('b',22.61,{tiltDownDeg:5}),cam('disabled',22.62,{enabled:false}),cam('hidden',22.63,{visible:false}),cam('draft',22.64,{lifecycle:'draft-unplaced'}),cam('unlocated',22.65,{position:null})], targets:[]}, {idFactory:()=> 'generated'});
   const map=fakeMap(), controller=createMapController({map,leaflet:fakeLeaflet(),store}); store.subscribe(state=>controller.sync(state)); controller.sync(store.getState());
   const ranges = coverageBandRanges(store.getCamera('a'), store.getState().settings);
   assert.equal(ranges.length, 4);
   assert.ok(ranges.every(range => range.innerM >= 0 && range.outerM <= 30000 && range.outerM > range.innerM));
   assert.deepEqual(ranges.map(range => range.key), ['robust','usable','difficult','notRecommended']);
   assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, 4);
-  assert.equal(controller.getCameraLayerSnapshot('b').bandLayerCount, 0);
+  assert.equal(controller.getCameraLayerSnapshot('b').bandLayerCount, 4);
+  assert.equal(controller.getCameraLayerSnapshot('disabled').bandLayerCount, 0);
+  assert.equal(controller.getCameraLayerSnapshot('disabled').envelopeLayerCount, 1);
+  assert.equal(controller.getCameraLayerSnapshot('hidden'), null);
+  assert.equal(controller.getCameraLayerSnapshot('draft'), null);
+  assert.equal(controller.getCameraLayerSnapshot('unlocated'), null);
+  const coverageEnvelope = analysisLayersFor(map, 'a').find(layer => layer.options?.fillOpacity === 0);
+  assert.equal(coverageEnvelope.options.color, '#566273');
+  assert.equal(coverageEnvelope.options.fillColor, '#566273');
   store.setFovColorMode('camera');
   assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, 0);
   assert.equal(controller.getCameraLayerSnapshot('b').bandLayerCount, 0);
+  assert.equal(controller.getCameraLayerSnapshot('disabled').bandLayerCount, 0);
+  const cameraModeEnvelope = analysisLayersFor(map, 'a').find(layer => layer.options?.fillOpacity > 0);
+  assert.equal(cameraModeEnvelope.options.color, '#2563eb');
+  assert.equal(cameraModeEnvelope.options.fillColor, '#2563eb');
   store.setFovColorMode('bad-value');
   assert.equal(store.getState().uiState.fovColorMode, 'coverage');
   assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, 4);
+  assert.equal(controller.getCameraLayerSnapshot('b').bandLayerCount, 4);
   controller.destroy();
 });
 
