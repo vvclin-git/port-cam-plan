@@ -19,7 +19,7 @@
 - drag end commits one `${kind}-drag` transaction and therefore one revision／history entry;
 - locked entities remain selectable and visible, but calculation fields and map drag are disabled.
 
-`PortCamMap.createEntityMarkerInteraction({kind, marker, store})` owns the shared marker lifecycle. The MapController subscription projects preview state immediately to marker position, FOV／bands, connection line, Drawer, and list. Camera-only behavior remains draft-unplaced placement, FOV／Fit FOV, and selected-Camera Scene export. Target creation is placed and committed immediately; Target retains dimensions, heading, and Target-only Drawer behavior.
+`PortCamMap.createEntityMarkerInteraction({kind, marker, store})` owns the shared marker lifecycle. The MapController subscription projects preview state immediately to marker position, FOV／bands, connection line, Drawer, and list. Camera-only behavior includes two-stage UI-only placement preview, Navigate-mode marker relocation, FOV／Fit FOV, and selected-Camera Scene export. Target creation is placed and committed immediately; Target retains dimensions, heading, and Target-only Drawer behavior.
 
 ## Map interaction policy
 

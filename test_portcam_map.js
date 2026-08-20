@@ -89,3 +89,31 @@ test('wheel zoom normalizes delta modes, enforces cooldown/bounds, preserves Ctr
   assert.equal(event(-1,1,300), true); assert.equal(map.getZoom(),12); assert.equal(event(-1,2,500), true); assert.equal(map.getZoom(),13); assert.equal(event(100,0,600,true), false); assert.equal(map.getZoom(),13);
   controller.destroy(); assert.equal(map.wheelListeners.size,0); map.container.dispatchWheel({deltaY:100,deltaMode:0,timeStamp:800,preventDefault(){throw new Error('destroyed handler');}}); const recreated=createMapController({map,leaflet:fakeLeaflet(),store}); assert.equal(map.wheelListeners.size,1); recreated.destroy();
 });
+
+test('Camera placement preview is temporary, follows FOV mode, and cleans up map move events', () => {
+  const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60)], targets:[]}, {idFactory:()=> 'generated'});
+  const map = fakeMap(), moves = [], clicks = [];
+  const controller = createMapController({map, leaflet:fakeLeaflet(), store, onMapMove:(latlng, originalEvent)=>moves.push({latlng, originalEvent}), onMapClick:(latlng, originalEvent)=>clicks.push({latlng, originalEvent})});
+  store.subscribe(state=>controller.sync(state)); controller.sync(store.getState());
+  const draft = cam('preview', 22.605, {color:'#7c3aed', headingDeg:45, tiltDownDeg:5});
+  controller.setCameraPlacementPreview({...draft, lifecycle:'placed'});
+  const previewGroup = [...map.layers].find(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview));
+  assert.ok(previewGroup);
+  assert.equal([...previewGroup.layers].filter(layer => layer.options?.pane === 'portcam-analysis-pane' && layer.options?.fillOpacity === 0).length, 1);
+  assert.equal([...previewGroup.layers].filter(layer => layer.options?.pane === 'portcam-analysis-pane' && layer.options?.fillOpacity > 0).length, 4);
+  const previewEnvelope = [...previewGroup.layers].find(layer => layer.options?.pane === 'portcam-analysis-pane' && layer.options?.fillOpacity === 0);
+  assert.equal(previewEnvelope.options.color, '#566273');
+  assert.equal(previewEnvelope.options.dashArray, '5,5');
+  const previewMarker = [...previewGroup.layers].find(layer => layer.__portcamPlacementPreview);
+  assert.equal(previewMarker.tooltip.content, 'Preview');
+  store.setFovColorMode('camera');
+  const cameraPreviewGroup = [...map.layers].find(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview));
+  assert.equal([...cameraPreviewGroup.layers].filter(layer => layer.options?.pane === 'portcam-analysis-pane' && layer.options?.fillOpacity > 0).length, 1);
+  assert.equal([...cameraPreviewGroup.layers].filter(layer => layer.options?.pane === 'portcam-analysis-pane' && layer.options?.fillColor === '#15803d').length, 0);
+  map.events.mousemove({latlng:{lat:22.606,lng:120.283}, originalEvent:{type:'mousemove'}});
+  map.events.click({latlng:{lat:22.607,lng:120.284}, originalEvent:{type:'click'}});
+  assert.equal(moves.length, 1); assert.equal(moves[0].originalEvent.type, 'mousemove'); assert.equal(clicks.length, 1); assert.equal(clicks[0].originalEvent.type, 'click');
+  controller.clearCameraPlacementPreview(); assert.equal([...map.layers].some(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview)), false);
+  controller.setCameraPlacementPreview(draft); assert.ok([...map.layers].some(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview)));
+  controller.destroy(); assert.equal(map.events.mousemove, undefined); assert.equal([...map.layers].some(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview)), false);
+});

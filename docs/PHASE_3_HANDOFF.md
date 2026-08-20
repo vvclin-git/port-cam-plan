@@ -22,9 +22,9 @@ The Scene export still calls `PortCamCore.buildCameraScene` for the selected Cam
 ## Implemented behavior
 
 - Top Bar shows project name, clean／dirty state, Undo／Redo, Camera Inspector, Project Settings, and Result Drawer. There are no Save／Import controls or fake saved timestamps.
-- Camera Rail supports select, add draft, visible, enabled, locked, and the Inspector actions for duplicate, rename, delete, relocate, fit, reset, and Scene export. Selected state uses background, border, weight, `aria-current`, and status text in addition to color.
+- Object Manager supports Camera selection, two-stage Add/Place Camera, visible, enabled, locked, and Inspector actions for duplicate, rename, delete, fit, reset, and Scene export. Selected state uses background, border, weight, `aria-current`, and status text in addition to color.
 - Camera Inspector has collapsible Position & Orientation, Sensor & Lens, Derived FOV, and Actions sections. Latitude／longitude provide the keyboard relocation path. Tilt is labelled `Tilt (+ downward)`. Derived values are read-only and horizon is shown in m／km.
-- Camera field input uses Store preview on input and a single Store transaction on blur／change／Enter. Switching Camera cancels an uncommitted preview. Locked Cameras remain selectable and unlockable while calculation and relocation fields are disabled.
+- Camera field input uses Store preview on input and a single Store transaction on blur／change／Enter. Navigate-mode marker drag is the direct relocation path for an Active, visible, unlocked Camera; latitude／longitude fields remain available. Switching Camera cancels an uncommitted preview. Locked Cameras remain selectable and unlockable while calculation and position fields are disabled.
 - Map Workspace keeps the reactive multi-Camera/Target LayerGroups and connection lines. Navigate／Place Camera／Place Target are explicit toolbar modes with an Escape-cancellable instruction banner. Map Settings owns OSM／NLSC, tile zoom, Surface visibility, and project-level planning defaults.
 - Surface classification keeps `water`, `land`, and `unknown`; hiding the Surface layer does not disable classification.
 - Target creation supports map placement and coordinate-only keyboard creation with `lengthM`, `widthM`, `heightM`, `headingDeg`, and `anchor: "bottom-center"`. Target selection does not select or change Camera.
@@ -58,7 +58,7 @@ Bundled Playwright／Microsoft Edge smoke at `http://127.0.0.1:8765/index.html`:
 
 - 1920×1080, 1366×768, and 1920×1080 with `deviceScaleFactor: 2` loaded without page errors.
 - App height matched the viewport, Surface reached `已載入`, body overflow was `hidden`, and body width／height did not scroll.
-- Add draft → Place Camera via Leaflet map event → placed marker; Undo removed the visible layer; Redo restored the marker.
+- Two-stage Add/Place Camera via Leaflet map events → one placed marker transaction; Undo removed the visible layer; Redo restored the marker.
 - Coordinate Target creation opened Result Drawer, showed outside-FOV amber state and observation metrics, and preserved selection after drawer close.
 - Removing all Cameras left a usable Target-only drawer state.
 - Map Settings changed NLSC PHOTO, tile zoom, and Surface visibility state; restoring Surface succeeded.

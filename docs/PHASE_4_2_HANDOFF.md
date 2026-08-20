@@ -1,17 +1,20 @@
 # Phase 4.2 Handoff — YOLO Coverage 與 FOV 著色模式
 
+> Phase 4.3 extends this contract in [`PHASE_4_3_HANDOFF.md`](PHASE_4_3_HANDOFF.md). The FOV switch is now a map-level control, and Camera placement is a two-stage UI-only preview followed by one placed-Camera transaction.
+
 ## Status
 
-- Phase 4.2 UI bugfix is complete; commit and push status is reported by the repository history and final handoff.
+- Phase 4.2 UI bugfix is complete in committed history at `8253133`; this document is the historical Phase 4.2 contract. Phase 4.3 starts from that clean commit and is documented separately.
 - The implementation checkout is `D:\Workplace\port-cam-plan` on branch `codex/multi-cam`. The user-facing C: OneDrive link is not the Git checkout.
-- Current clean baseline before this bugfix: `379f94f` — `Add YOLO coverage and FOV color modes`.
+- Phase 4.2 bugfix baseline before its edits: `379f94f` — `Add YOLO coverage and FOV color modes`.
 - Phase 4.1 and Phase 4.2 implementation changes are already represented by the committed baseline above; this handoff does not describe them as uncommitted.
 
 ## Bugfix baseline
 
 The bugfix was started from the clean baseline:
 
-- `HEAD 379f94f` — `Add YOLO coverage and FOV color modes`.
+- `HEAD 8253133` — `Fix FOV color separation and draggable coverage legend`.
+- Phase 4.2 bugfix starting point: `379f94f` — `Add YOLO coverage and FOV color modes`.
 - Branch: `codex/multi-cam`, tracking `origin/codex/multi-cam`.
 - Working tree was clean before editing; no staged changes or unrelated baseline changes were present.
 
@@ -32,7 +35,7 @@ The bugfix was started from the clean baseline:
 
 - `uiState.fovColorMode` is `"coverage"` by default; invalid setter values fall back to `"coverage"`.
 - `setFovColorMode(mode)` is UI-only: it is excluded from `camera-project/1.0` and `camera-scene/1.1`, does not increment revision, history, or dirty state, and Undo/Redo does not change it.
-- The only segmented control is in the YOLO Coverage toolbar. Map Settings has no duplicate control.
+- The independent FOV segmented control is in the map's upper-right control group, alongside Map Settings. YOLO Coverage has no duplicate control.
 - `camera` mode renders every visible, placed Camera with its identity-colored boundary/centerline/fill; the enabled Active Camera receives stronger outline/fill styling, disabled Cameras remain low-opacity neutral dashed outlines, no Camera receives pixel bands, and the whole map legend is hidden.
 - `coverage` mode renders every enabled, visible, placed Camera with neutral FOV boundary/centerline and no identity fill; every eligible Camera receives its complete clipped green, yellow, orange, and red (`< 8 px`) bands. Active Camera emphasis is limited to weight, opacity, and layer order.
 - Bands use `planningTargetHeightM` and are clipped to the existing near/far envelope, horizon distance, and 30 km maximum. Hidden, disabled, draft, or unlocated Cameras do not render coverage bands; disabled Cameras retain only the neutral dashed outline.
@@ -40,11 +43,11 @@ The bugfix was started from the clean baseline:
 
 ## Changed files
 
-- `index.html` — loads the pure YOLO module, gives the legend a mount point, and replaces the Phase 4.1 placeholder wiring/version label.
-- `app.css` — YOLO toolbar, summary, fixed-column local-scroll table, active-row state, segmented control, compact responsive layout, and bounded draggable legend styles.
+- `index.html` — loads the pure YOLO module, gives the legend a mount point, places the map-level FOV control, and provides the Phase 4.3 placement toolbar.
+- `app.css` — YOLO summary, fixed-column local-scroll table, active-row state, map-level FOV control, compact responsive layout, bounded draggable legend, and Camera placement preview styles.
 - `portcam-store.js` — UI-only `fovColorMode` default/fallback/setter.
-- `portcam-map.js` — four clipped coverage ranges, red band, mutually exclusive mode branches, neutral Coverage FOV geometry, and identity/coverage color constants.
-- `portcam-ui.js` — YOLO derivation/rendering, summary/table/empty states, mode control, session-local draggable legend controller, and click/Enter/Space Camera activation.
+- `portcam-map.js` — four clipped coverage ranges, red band, mutually exclusive mode branches, neutral Coverage FOV geometry, identity/coverage color constants, and temporary placement preview layers.
+- `portcam-ui.js` — YOLO derivation/rendering, summary/table/empty states, map-level mode control, session-local draggable legend controller, two-stage Camera placement, and click/Enter/Space Camera activation.
 - `portcam-yolo-coverage.js` — pure tier/status/count derivation.
 - `test_yolo_coverage.js` — tier boundaries, visibility/status rules, enabled/hidden filtering, summaries, disabled Target behavior, and Comparison reuse.
 - `test_portcam_store.js` — UI-only mode isolation and Undo/Redo behavior.

@@ -230,7 +230,6 @@ Camera Inspector 約 320–360 px。
 
 ## Actions
 
-- Relocate Camera。
 - Fit map to Camera。
 - Fit map to FOV。
 - Duplicate Camera。
@@ -395,34 +394,26 @@ Selection 採 sticky behavior。
 
 # 5.2 Place Camera
 
-用來定位 selected Camera。
-
-使用情境：
-
-- 新增 Camera。
-- Relocate Camera。
+`place-camera` 僅用於建立新 Camera，不會搬動目前 selected Camera，也不會在進入模式時建立 draft。
 
 流程：
 
-1. 確定 selected Camera。
-2. 切換：
+1. Add Camera、Place Camera 或 Camera Manager 的新增動作切換：
 
 ```text
 mapInteractionMode = place-camera
 ```
 
-3. 地圖游標改為定位樣式。
-4. 點擊地圖。
-5. 更新 Camera position。
-6. 更新 FOV。
-7. 更新相關 Observation 狀態。
-8. 自動返回：
+2. 第一次點擊只記錄 UI-only anchor，顯示 ghost marker 與 FOV preview。
+3. 移動游標時以 `bearingBetween(anchor, cursor)` 更新 preview heading。
+4. 游標距離 anchor 少於 8 screen pixels 時不可確認；第二次有效點擊才建立一台 `placed` Camera。
+5. 更新 FOV 與相關 Observation 狀態，自動返回：
 
 ```text
 mapInteractionMode = navigate
 ```
 
-Camera selection 本身不會進入 Place Camera mode。
+整個建立動作只產生一筆 Store history；Escape 或切換其他 interaction mode 會清除 preview。
 
 ---
 
@@ -817,14 +808,11 @@ Camera C   Outside VFOV
 ## 9.1 Add Camera
 
 1. 點 Camera Rail `+`。
-2. 建立預設 Camera。
-3. 自動 select Camera。
-4. 進入 `place-camera`。
-5. 使用者點擊地圖。
-6. Camera position 更新。
-7. FOV 更新。
-8. 回到 `navigate`。
-9. Camera Inspector 顯示 Camera parameters。
+2. 進入 `place-camera`，不建立 draft、不改 dirty state。
+3. 第一次點擊地圖記錄 anchor，顯示 ghost marker 與完整 FOV preview。
+4. 移動游標更新 heading；第二次有效點擊才建立 `placed` Camera。
+5. 自動 select Camera、顯示 Details，並回到 `navigate`。
+6. 一次建立只產生一筆 history；Undo 一次移除新 Camera。
 
 ---
 
@@ -889,22 +877,12 @@ Target selected?
 
 ---
 
-# 9.4 Relocate Camera
+# 9.4 Move Existing Camera
 
-1. Select Camera。
-2. Click Relocate。
-3. 進入：
-
-```text
-place-camera
-```
-
-4. Click map。
-5. Camera position 更新。
-6. FOV 更新。
-7. Camera revision 增加。
-8. 相關 Observation stale。
-9. 回到 Navigate。
+1. 在 `navigate` 選取 Active Camera。
+2. 直接拖曳其 marker；只有 visible、unlocked Camera 可拖曳。
+3. drag end 產生一筆 Camera move transaction，更新 position、FOV 與相關 Observation 狀態。
+4. Locked Camera 不可拖曳；latitude／longitude 欄位仍提供鍵盤編輯路徑。
 
 ---
 

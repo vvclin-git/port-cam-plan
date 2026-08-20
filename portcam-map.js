@@ -83,7 +83,7 @@
     }
   }
 
-  function createMapController({map, leaflet: L, store, onCameraDrag, onMapClick, onCameraSelect, onTargetSelect, labelVisibility}) {
+  function createMapController({map, leaflet: L, store, onCameraDrag, onMapClick, onMapMove, onCameraSelect, onTargetSelect, labelVisibility}) {
     if (!map || !L || !store) throw new Error('createMapController requires map, Leaflet and store');
     const cameraLayers = new Map(), targetLayers = new Map();
     const labels = {camera: labelVisibility?.camera !== false, target: labelVisibility?.target !== false};
@@ -91,6 +91,8 @@
     let wheelContainer = null;
     let lastWheelDirection = 0;
     let lastWheelAt = -Infinity;
+    let placementPreviewDraft = null;
+    let placementPreview = null;
 
     function ensurePanes() {
       if (!map.createPane) return;
@@ -103,6 +105,7 @@
     function remove(group) { if (group) map.removeLayer(group); }
     function removeLayer(record, key) { if (record[key]) { record.group.removeLayer(record[key]); record[key] = null; } }
     function clear(record, key) { (record[key] || []).forEach(layer => record.group.removeLayer(layer)); record[key] = []; }
+    function clearFovLayers(record) { clear(record, 'envelope'); clear(record, 'bands'); removeLayer(record, 'centerline'); }
     function setLabel(record, kind, visible) {
       record.labelVisible = visible;
       if (visible) record.marker.openTooltip?.();
@@ -116,6 +119,49 @@
       return pts;
     }
     function entityTooltip() { return {permanent: true, direction: 'top', className: 'entity-label', pane: PANE_NAMES.label, interactive: false, offset: [0, -9]}; }
+    function cameraGeometry(camera, state) {
+      try {
+        const optics = Core.computeOptics(camera);
+        const horizon = Core.computePlanningHorizon(camera.heightM, state.settings.planningTargetHeightM);
+        const envelope = Core.computeGroundEnvelope(camera, optics, {horizonDistanceM: horizon.distanceM});
+        const near = Math.max(0, envelope.nearDistanceM || 0), far = Math.min(envelope.farDistanceM || horizon.distanceM, horizon.distanceM, 30000);
+        return far > near ? {optics, near, far} : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    function renderFov(record, camera, state, {preview = false} = {}) {
+      clearFovLayers(record);
+      if (!camera?.position) return;
+      const geometry = cameraGeometry(camera, state);
+      if (!geometry) return;
+      const center = point(L, camera.position);
+      const fovColorMode = state.uiState?.fovColorMode === 'camera' ? 'camera' : 'coverage';
+      const cameraMode = fovColorMode === 'camera';
+      const enabled = camera.enabled !== false;
+      const selected = !preview && state.uiState.selectedCameraId === camera.id;
+      const emphasized = selected && enabled;
+      const color = camera.color || CAMERA_COLORS[Math.max(0, state.cameraOrder.indexOf(camera.id)) % CAMERA_COLORS.length];
+      const neutralColor = '#566273';
+      const geometryOptions = {pane: PANE_NAMES.analysis, interactive: false};
+      const opacityScale = preview ? .55 : 1;
+      const outlineOpacity = (enabled ? (emphasized ? .95 : .42) : .24) * opacityScale;
+      const centerlineOpacity = (enabled ? (emphasized ? .85 : .35) : .2) * opacityScale;
+      const previewDash = preview ? '5,5' : null;
+      if (cameraMode) {
+        const envelopeColor = enabled ? color : neutralColor;
+        const poly = L.polygon(sector(center, camera.headingDeg, geometry.optics.horizontalFovDeg / 2, geometry.near, geometry.far), {color: envelopeColor, weight: preview ? 1.5 : (emphasized ? 3 : 1.2), opacity: outlineOpacity, fillColor: envelopeColor, fillOpacity: enabled ? (preview ? .04 : (emphasized ? .1 : .035)) : 0, dashArray: enabled ? previewDash : '5,5', ...geometryOptions}).addTo(record.group);
+        record.envelope.push(poly);
+        record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, geometry.far))], {color: envelopeColor, weight: preview ? 1 : (emphasized ? 1.4 : .8), opacity: centerlineOpacity, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
+      } else {
+        const poly = L.polygon(sector(center, camera.headingDeg, geometry.optics.horizontalFovDeg / 2, geometry.near, geometry.far), {color: neutralColor, weight: preview ? 1.5 : (emphasized ? 3 : 1.2), opacity: outlineOpacity, fillColor: neutralColor, fillOpacity: 0, dashArray: enabled ? previewDash : '5,5', ...geometryOptions}).addTo(record.group);
+        record.envelope.push(poly);
+        record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, geometry.far))], {color: neutralColor, weight: preview ? 1 : (emphasized ? 1.4 : .8), opacity: centerlineOpacity, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
+        if (enabled) coverageBandRanges(camera, state.settings).forEach(band => {
+          record.bands.push(L.polygon(sector(center, camera.headingDeg, geometry.optics.horizontalFovDeg / 2, band.innerM, band.outerM), {color:band.color, weight:1, opacity: preview ? .55 : 1, fillColor:band.color, fillOpacity: preview ? .1 : .16, dashArray: preview ? '5,5' : null, ...geometryOptions}).addTo(record.group));
+        });
+      }
+    }
     function ensureCamera(camera) {
       if (cameraLayers.has(camera.id)) return cameraLayers.get(camera.id);
       const group = layerGroup();
@@ -134,36 +180,38 @@
       if (!visible) { if (record) { clear(record, 'envelope'); clear(record, 'bands'); removeLayer(record, 'centerline'); remove(record.group); } return; }
       record = record || ensureCamera(camera);
       if (!map.hasLayer || !map.hasLayer(record.group)) record.group.addTo(map);
-      const center = point(L, camera.position), color = camera.color || CAMERA_COLORS[Math.max(0, state.cameraOrder.indexOf(camera.id)) % CAMERA_COLORS.length];
+      const center = point(L, camera.position);
       record.marker.setLatLng(center); record.marker.setTooltipContent?.(camera.name || camera.id); record.marker.setOpacity(camera.enabled === false ? .42 : 1); setLabel(record, 'camera', labels.camera);
       const canDrag = selected && camera.visible !== false && camera.locked !== true && state.uiState.interactionMode === 'navigate';
       record.marker.options.draggable = canDrag;
       if (record.marker.dragging) canDrag ? record.marker.dragging.enable() : record.marker.dragging.disable();
-      clear(record, 'envelope'); clear(record, 'bands'); removeLayer(record, 'centerline');
-      let optics, horizon, envelope;
-      try { optics = Core.computeOptics(camera); horizon = Core.computePlanningHorizon(camera.heightM, state.settings.planningTargetHeightM); envelope = Core.computeGroundEnvelope(camera, optics, {horizonDistanceM: horizon.distanceM}); } catch (_) { return; }
-      const near = Math.max(0, envelope.nearDistanceM || 0), far = Math.min(envelope.farDistanceM || horizon.distanceM, horizon.distanceM, 30000);
-      if (far <= near) return;
-      const geometryOptions = {pane: PANE_NAMES.analysis, interactive: false};
-      const fovColorMode = state.uiState?.fovColorMode === 'camera' ? 'camera' : 'coverage';
-      const cameraMode = fovColorMode === 'camera';
-      const enabled = camera.enabled !== false;
-      const emphasized = selected && enabled;
-      const neutralColor = '#566273';
-      if (cameraMode) {
-        const envelopeColor = enabled ? color : neutralColor;
-        const poly = L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, near, far), {color: envelopeColor, weight: emphasized ? 3 : 1.2, opacity: enabled ? (selected ? .95 : .42) : .24, fillColor: envelopeColor, fillOpacity: enabled ? (selected ? .1 : .035) : 0, dashArray: enabled ? null : '5,5', ...geometryOptions}).addTo(record.group);
-        record.envelope.push(poly);
-        record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, far))], {color: envelopeColor, weight: emphasized ? 1.4 : .8, opacity: enabled ? (selected ? .85 : .35) : .2, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
-      } else {
-        const poly = L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, near, far), {color: neutralColor, weight: emphasized ? 3 : 1.2, opacity: enabled ? (selected ? .95 : .42) : .24, fillColor: neutralColor, fillOpacity: 0, dashArray: enabled ? null : '5,5', ...geometryOptions}).addTo(record.group);
-        record.envelope.push(poly);
-        record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, far))], {color: neutralColor, weight: emphasized ? 1.4 : .8, opacity: enabled ? (selected ? .85 : .35) : .2, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
-        if (enabled) coverageBandRanges(camera, state.settings).forEach(band => {
-          record.bands.push(L.polygon(sector(center, camera.headingDeg, optics.horizontalFovDeg / 2, band.innerM, band.outerM), {color:band.color, weight:1, fillColor:band.color, fillOpacity:.16, ...geometryOptions}).addTo(record.group));
-        });
-      }
+      renderFov(record, camera, state);
       if (selected && record.group.bringToFront) record.group.bringToFront();
+    }
+    function placementPreviewIcon() {
+      return L.divIcon({className: 'camera-placement-preview-wrapper', html: '<span class="camera-placement-preview-marker" aria-hidden="true"></span>', iconSize: [28, 28], iconAnchor: [14, 14]});
+    }
+    function clearCameraPlacementPreview() {
+      placementPreviewDraft = null;
+      if (!placementPreview) return;
+      clearFovLayers(placementPreview);
+      remove(placementPreview.group);
+      placementPreview = null;
+    }
+    function renderCameraPlacementPreview(state) {
+      if (!placementPreviewDraft?.position) { clearCameraPlacementPreview(); return; }
+      if (!placementPreview) {
+        const group = layerGroup();
+        const marker = L.marker(point(L, placementPreviewDraft.position), {draggable: false, interactive: false, pane: PANE_NAMES.camera, bubblingMouseEvents: false, icon: placementPreviewIcon()}).bindTooltip('Preview', {...entityTooltip(), permanent: true});
+        marker.__portcamPlacementPreview = true;
+        marker.addTo(group);
+        marker.openTooltip?.();
+        placementPreview = {group, marker, envelope: [], bands: [], centerline: null};
+      }
+      if (!map.hasLayer || !map.hasLayer(placementPreview.group)) placementPreview.group.addTo(map);
+      placementPreview.marker.setLatLng(point(L, placementPreviewDraft.position));
+      placementPreview.marker.setTooltipContent?.('Preview');
+      renderFov(placementPreview, placementPreviewDraft, state, {preview: true});
     }
     function targetIcon(target, selected) {
       const classes = ['target-marker']; if (selected) classes.push('is-selected'); if (target.locked) classes.push('is-locked'); if (target.enabled === false) classes.push('is-disabled');
@@ -208,6 +256,7 @@
       cameraLayers.forEach((record, id) => { if (!wantedCameras.has(id)) { record.interaction?.destroy(); remove(record.group); cameraLayers.delete(id); } });
       targetLayers.forEach((record, id) => { if (!wantedTargets.has(id)) { record.interaction?.destroy(); remove(record.group); targetLayers.delete(id); } });
       state.cameraOrder.forEach(id => syncCamera(projected.camerasById[id], projected)); state.targetOrder.forEach(id => syncTarget(projected.targetsById[id], projected));
+      renderCameraPlacementPreview(projected);
     }
     function snapshot(id, table) { const record = table.get(id); if (!record) return null; const visible = !map.hasLayer || map.hasLayer(record.group); return {markerPosition: visible && record.marker.getLatLng ? record.marker.getLatLng() : null, visible, markerType: record.marker.constructor?.name || 'marker'}; }
     function getCameraLayerSnapshot(id) { const record = cameraLayers.get(id); if (!record) return null; return {...snapshot(id, cameraLayers), envelopeLayerCount: record.envelope.length, bandLayerCount: record.bands.length, centerlinePresent: Boolean(record.centerline), labelVisible: record.labelVisible}; }
@@ -229,9 +278,10 @@
       if (next !== current && map.setZoom) map.setZoom(next);
     }
     function bindWheel() { map.scrollWheelZoom?.disable?.(); wheelContainer = map.getContainer?.(); if (wheelContainer?.addEventListener) wheelContainer.addEventListener('wheel', wheelZoom, {passive: false}); }
-    function handleMapClick(event) { if (!destroyed && event?.latlng && onMapClick) onMapClick(event.latlng); }
-    ensurePanes(); bindWheel(); map.on?.('click', handleMapClick);
-    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, cancelInteraction() { store.cancelPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
+    function handleMapClick(event) { if (!destroyed && event?.latlng && onMapClick) onMapClick(event.latlng, event.originalEvent); }
+    function handleMapMove(event) { if (!destroyed && event?.latlng && onMapMove) onMapMove(event.latlng, event.originalEvent); }
+    ensurePanes(); bindWheel(); map.on?.('click', handleMapClick); map.on?.('mousemove', handleMapMove);
+    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
   }
   return {createMapController, createEntityMarkerInteraction, coverageBandRanges, CAMERA_COLORS, COVERAGE_COLORS, PANE_NAMES};
 }));
