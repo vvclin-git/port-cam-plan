@@ -61,6 +61,7 @@ test('Coverage and Camera colors are mutually exclusive for every eligible Camer
 
 test('Camera and Target share one drag preview/commit contract and map projections', () => {
   const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60)], targets:[target('t',22.601)]}, {idFactory:()=> 'generated'});
+  store.selectTarget('t');
   const map=fakeMap(), controller=createMapController({map,leaflet:fakeLeaflet(),store}); store.subscribe(state=>controller.sync(state)); controller.sync(store.getState());
   const cameraMarker = markerFor(map, 'a'), targetMarker = markerFor(map, 't');
   assert.equal(cameraMarker.options.bubblingMouseEvents, false); assert.equal(targetMarker.options.bubblingMouseEvents, false);
@@ -78,6 +79,19 @@ test('Camera and Target share one drag preview/commit contract and map projectio
   store.patchTarget('t', {visible:false}); assert.equal(targetMarker.options.draggable, false); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 2);
   store.patchTarget('t', {visible:true, enabled:false}); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 3);
   store.selectTarget(null); assert.equal(targetMarker.options.draggable, false); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 4);
+  controller.destroy();
+});
+
+test('focusedEntity controls marker drag and FOV emphasis independently from Active and Current selections', () => {
+  const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60),cam('b',22.61)], targets:[target('t',22.601)]}, {idFactory:()=> 'generated'});
+  const map = fakeMap(), controller = createMapController({map,leaflet:fakeLeaflet(),store}); store.subscribe(state => controller.sync(state)); controller.sync(store.getState());
+  const cameraA = markerFor(map, 'a'), cameraB = markerFor(map, 'b'), targetMarker = markerFor(map, 't');
+  store.clearFocusedEntity();
+  assert.equal(cameraA.options.draggable, false); assert.equal(cameraB.options.draggable, false); assert.equal(targetMarker.options.draggable, false);
+  assert.ok(controller.getCameraLayerSnapshot('a').bandLayerCount > 0); assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, controller.getCameraLayerSnapshot('b').bandLayerCount);
+  store.setFocusedEntity('camera', 'b'); assert.equal(cameraA.options.draggable, false); assert.equal(cameraB.options.draggable, true);
+  store.setFocusedEntity('target', 't'); assert.equal(targetMarker.options.draggable, true); assert.equal(store.getState().uiState.selectedCameraId, 'b'); assert.equal(store.getState().uiState.selectedTargetId, 't');
+  store.clearFocusedEntity(); assert.equal(targetMarker.options.draggable, false); assert.equal(controller.getTargetLayerSnapshot('t').linePresent, true);
   controller.destroy();
 });
 

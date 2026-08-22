@@ -39,6 +39,7 @@
   function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
   function finite(value) { return Number.isFinite(Number(value)); }
   function num(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
+  function normalizeHeading(value) { const parsed = Number(value); if (!Number.isFinite(parsed)) return null; const wrapped = ((parsed % 360) + 360) % 360; return Math.round(wrapped * 10) / 10; }
   function fmtM(value) { if (!Number.isFinite(value)) return '∞'; return value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${value.toFixed(0)} m`; }
   function fmtDeg(value) { return Number.isFinite(value) ? `${value.toFixed(2)}°` : '—'; }
   function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[char])); }
@@ -92,6 +93,7 @@
     let legendPositionUserSet = false;
     let legendDrag = null;
     let pendingCameraPlacement = null;
+    let headingDrag = null;
     const labelVisibility = {camera: true, target: true};
 
     const els = {
@@ -107,7 +109,7 @@
       baseMapSelect: $('baseMapSelect'), surfaceToggle: $('surfaceToggle'), surfaceState: $('surfaceState'), surfaceHelp: $('surfaceHelp'),
       tileZoomSelect: $('tileZoomSelect'), tileZoomHelp: $('tileZoomHelp'),
       cameraLabelsToggle: $('cameraLabelsToggle'), targetLabelsToggle: $('targetLabelsToggle'),
-      targetFormError: $('targetFormError'), exportState: $('exportState'), exportError: $('exportError')
+      targetFormError: $('targetFormError'), exportState: $('exportState'), exportError: $('exportError'), headingScrubber: $('headingScrubber')
     };
 
     function listen(target, event, handler, options) {
@@ -142,18 +144,35 @@
       store.setPanelOpen(panel, open);
       scheduleInvalidate();
     }
+    function leaveFocusMapMode() { if (store.getState().uiState.focusMapMode) store.setFocusMapMode(false); }
     function showInspector() { setPanel('inspector', true); }
-    function showDetails(kind, id) { store.setFocusedEntity(kind, id); store.setInspectorTab('details'); showInspector(); }
+    function showDetails(kind, id) { leaveFocusMapMode(); store.setFocusedEntity(kind, id); store.setInspectorTab('details'); showInspector(); }
     function showObservation() { store.setInspectorTab('observation'); showInspector(); }
     function closeInspector() { setPanel('inspector', false); }
+    function togglePanel(panel) {
+      const state = store.getState();
+      if (state.uiState.focusMapMode) { leaveFocusMapMode(); return setPanel(panel, true); }
+      return setPanel(panel, state.uiState.panelOpen?.[panel] !== true);
+    }
+    function toggleFocusMap() {
+      const state = store.getState();
+      if (state.uiState.focusMapMode) { store.setFocusMapMode(false); scheduleInvalidate(); return; }
+      store.clearFocusedEntity(); store.setFocusMapMode(true); scheduleInvalidate();
+    }
     function renderPanelVisibility(state) {
-      const panels = state.uiState.panelOpen || {};
-      if (els.inspector) { els.inspector.classList.toggle('is-closed', panels.inspector === false); els.inspector.setAttribute('aria-hidden', panels.inspector === false ? 'true' : 'false'); }
+      const panels = state.uiState.panelOpen || {}, focusMap = state.uiState.focusMapMode === true;
+      const objectManagerOpen = panels.objectManager !== false && !focusMap;
+      const inspectorOpen = panels.inspector !== false && !focusMap;
+      if (els.inspector) { els.inspector.classList.toggle('is-closed', !inspectorOpen); els.inspector.setAttribute('aria-hidden', inspectorOpen ? 'false' : 'true'); }
+      const rail = $('cameraRail'); if (rail) { rail.classList.toggle('is-closed', !objectManagerOpen); rail.setAttribute('aria-hidden', objectManagerOpen ? 'false' : 'true'); }
       if (els.mapSettingsPopover) els.mapSettingsPopover.hidden = panels.mapSettings !== true;
-      if (els.workspace) els.workspace.classList.toggle('is-open', panels.workspace === true);
+      if (els.workspace) { els.workspace.classList.toggle('is-open', panels.workspace === true && !focusMap); els.workspace.classList.toggle('is-closed', focusMap); }
       if (els.mapSettingsToggle) els.mapSettingsToggle.setAttribute('aria-expanded', panels.mapSettings === true ? 'true' : 'false');
       if ($('workspaceToggle')) { $('workspaceToggle').setAttribute('aria-expanded', panels.workspace === true ? 'true' : 'false'); $('workspaceToggle').textContent = panels.workspace === true ? 'Collapse' : 'Expand'; }
-      if (els.appShell) { els.appShell.dataset.inspectorOpen = panels.inspector === true ? 'true' : 'false'; els.appShell.dataset.workspaceOpen = panels.workspace === true ? 'true' : 'false'; }
+      if ($('toggleObjectManager')) { $('toggleObjectManager').setAttribute('aria-pressed', panels.objectManager !== false ? 'true' : 'false'); $('toggleObjectManager').setAttribute('aria-expanded', panels.objectManager !== false ? 'true' : 'false'); }
+      if ($('openInspector')) { $('openInspector').setAttribute('aria-pressed', panels.inspector !== false ? 'true' : 'false'); $('openInspector').setAttribute('aria-expanded', panels.inspector !== false ? 'true' : 'false'); }
+      if ($('focusMapButton')) $('focusMapButton').setAttribute('aria-pressed', focusMap ? 'true' : 'false');
+      if (els.appShell) { els.appShell.dataset.objectManagerOpen = panels.objectManager !== false ? 'true' : 'false'; els.appShell.dataset.inspectorOpen = panels.inspector !== false ? 'true' : 'false'; els.appShell.dataset.workspaceOpen = panels.workspace === true ? 'true' : 'false'; els.appShell.dataset.focusMap = focusMap ? 'true' : 'false'; }
     }
 
     function renderTopBar(state) {
@@ -170,6 +189,7 @@
       setValue($('objectManagerSearch'), managerKind === 'cameras' ? state.uiState.cameraSearchQuery : state.uiState.targetSearchQuery);
       if ($('addCamera')) $('addCamera').hidden = managerKind !== 'cameras'; if ($('addTargetManager')) $('addTargetManager').hidden = managerKind !== 'targets';
       if (els.cameraRailItems) {
+        const scrollTop = els.cameraRailItems.scrollTop;
         els.cameraRailItems.replaceChildren();
         const kind = state.uiState.objectManagerTab === 'targets' ? 'target' : 'camera', order = kind === 'camera' ? state.cameraOrder : state.targetOrder, table = kind === 'camera' ? state.camerasById : state.targetsById, query = String(kind === 'camera' ? state.uiState.cameraSearchQuery : state.uiState.targetSearchQuery || '').toLowerCase();
         order.map(id => table[id]).filter(Boolean).filter(entity => !query || `${entity.name} ${entity.position?.latitudeDeg || ''} ${entity.position?.longitudeDeg || ''}`.toLowerCase().includes(query)).forEach(entity => {
@@ -183,7 +203,8 @@
           const controls = doc.createElement('span'); controls.className='manager-status-controls'; [['visible',entity.visible!==false,entity.visible!==false?'◉':'○'],['enabled',entity.enabled!==false,entity.enabled!==false?'✓':'×'],['locked',entity.locked,entity.locked?'🔒':'🔓']].forEach(([action,pressed,label]) => { const b=doc.createElement('button'); const entityName=entity.name||entity.id; const actionLabel=action==='visible'?(pressed?'隱藏':'顯示'):action==='enabled'?(pressed?'停用':'啟用'):pressed?'解除鎖定':'鎖定'; b.type='button'; b.className='rail-icon'; b.textContent=label; b.dataset.entityAction=action; b.dataset.entityKind=kind; b.dataset.entityId=entity.id; b.setAttribute('aria-pressed',pressed?'true':'false'); b.setAttribute('aria-label',`${actionLabel} ${entityName}`); b.title=`${actionLabel} ${entityName}`; controls.appendChild(b); }); bottom.appendChild(controls); item.appendChild(bottom); els.cameraRailItems.appendChild(item);
         });
         if (!els.cameraRailItems.children.length) { const empty=doc.createElement('div'); empty.className='rail-empty'; empty.textContent=`尚無符合的 ${kind}`; els.cameraRailItems.appendChild(empty); }
-        const focused = Array.from(els.cameraRailItems.querySelectorAll('[data-entity-id]')).find(item => item.dataset.entityKind === state.uiState.focusedEntity?.kind && item.dataset.entityId === state.uiState.focusedEntity?.id); focused?.scrollIntoView?.({block:'nearest'});
+        els.cameraRailItems.scrollTop = scrollTop;
+        const focused = Array.from(els.cameraRailItems.querySelectorAll('[data-entity-id]')).find(item => item.dataset.entityKind === state.uiState.focusedEntity?.kind && item.dataset.entityId === state.uiState.focusedEntity?.id); if (!scrollTop) focused?.scrollIntoView?.({block:'nearest'});
       }
       if (els.cameraSelect) {
         els.cameraSelect.replaceChildren();
@@ -213,12 +234,20 @@
       const customSensor = $('sensorFormat')?.value === 'custom'; if ($('sensorW')) $('sensorW').readOnly = !customSensor; if ($('sensorH')) $('sensorH').readOnly = !customSensor;
       const customResolution = $('resolutionPreset')?.value === 'custom'; if ($('resW')) $('resW').readOnly = !customResolution; if ($('resH')) $('resH').readOnly = !customResolution;
     }
+    function renderHeadingScrubber(camera) {
+      const scrubber = els.headingScrubber; if (!scrubber) return;
+      const value = normalizeHeading(camera?.headingDeg ?? 0) ?? 0, disabled = !camera || camera.locked === true;
+      scrubber.classList.toggle('is-disabled', disabled); scrubber.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+      scrubber.setAttribute('aria-valuenow', String(value)); scrubber.setAttribute('aria-valuetext', `${value.toFixed(1)}°`);
+      const indicator = scrubber.querySelector('.heading-scrubber-indicator'); if (indicator) indicator.style.left = `${(value / 360) * 100}%`;
+    }
     function renderInspector(state) {
       const camera = selectedCamera(state);
       if ($('cameraInspectorName')) $('cameraInspectorName').textContent = camera?.name || '沒有選取 Camera';
       if ($('cameraInspectorSub')) $('cameraInspectorSub').textContent = camera ? (camera.position ? 'Selected Camera' : 'Draft · 尚未定位') : '從 Rail 選取 Camera';
       if ($('cameraLifecycle')) { $('cameraLifecycle').textContent = !camera ? 'None' : camera.lifecycle === 'draft-unplaced' ? 'Draft' : camera.locked ? 'Locked' : camera.enabled === false ? 'Disabled' : 'Placed'; $('cameraLifecycle').className = `status-badge ${!camera ? '' : camera.lifecycle === 'draft-unplaced' ? 'draft' : camera.locked ? '' : camera.enabled === false ? '' : 'placed'}`; }
       syncCameraFieldValues(camera);
+      renderHeadingScrubber(camera);
       const metrics = computeMetrics(camera, state);
       const metricValues = metrics && !metrics.error ? {pixelPitch: `${(metrics.optics.pixelPitchMm * 1000).toFixed(2)} µm`, hfov: fmtDeg(metrics.optics.horizontalFovDeg), vfov: fmtDeg(metrics.optics.verticalFovDeg), horizon: `${metrics.horizon.distanceKm.toFixed(2)} km`, nearR: fmtM(metrics.envelope.nearDistanceM), farR: fmtM(metrics.envelope.farDistanceM)} : {pixelPitch: '—', hfov: '—', vfov: '—', horizon: '—', nearR: '—', farR: '—'};
       Object.entries(metricValues).forEach(([id, value]) => { const element = $(id); if (element) element.textContent = value; });
@@ -563,7 +592,7 @@
     function readCameraField(field) { const element = $(field); return element ? num(element.value) : null; }
     function cameraPatchForField(field) {
       const mapFields = {sensorW: 'sensorWidthMm', sensorH: 'sensorHeightMm', resW: 'widthPx', resH: 'heightPx', focal: 'focalLengthMm', camHeight: 'heightM', heading: 'headingDeg', tilt: 'tiltDownDeg'};
-      if (mapFields[field]) { const value = readCameraField(field); return value == null ? null : {[mapFields[field]]: value}; }
+      if (mapFields[field]) { const value = field === 'heading' ? normalizeHeading(readCameraField(field)) : readCameraField(field); return value == null ? null : {[mapFields[field]]: value}; }
       if (field === 'cameraLat' || field === 'cameraLng') { const camera = selectedCamera(); const latitudeDeg = field === 'cameraLat' ? readCameraField(field) : camera?.position?.latitudeDeg; const longitudeDeg = field === 'cameraLng' ? readCameraField(field) : camera?.position?.longitudeDeg; return latitudeDeg == null || longitudeDeg == null ? null : {position: {latitudeDeg, longitudeDeg}, lifecycle: 'placed'}; }
       return null;
     }
@@ -573,7 +602,46 @@
       const state = store.getState(); if (state.preview?.kind === 'camera' && state.preview.id === id) store.commitPreview(`camera-${field}`); else store.patchCamera(id, patch, `camera-${field}`);
     }
     function previewCameraField(field) { const id = selectedCameraId(); const patch = cameraPatchForField(field); if (id && patch) store.beginPreview('camera', id, patch); }
-    function commitCameraForm() { const id = selectedCameraId(); if (!id) return; const fields = ['sensorW', 'sensorH', 'resW', 'resH', 'focal', 'camHeight', 'heading', 'tilt']; const patch = {}; fields.forEach(field => { const value = readCameraField(field); const key = {sensorW: 'sensorWidthMm', sensorH: 'sensorHeightMm', resW: 'widthPx', resH: 'heightPx', focal: 'focalLengthMm', camHeight: 'heightM', heading: 'headingDeg', tilt: 'tiltDownDeg'}[field]; if (value != null) patch[key] = value; }); if (Object.keys(patch).length) { store.cancelPreview(); store.patchCamera(id, patch, 'camera-form'); } }
+    function commitCameraForm() { const id = selectedCameraId(); if (!id) return; const fields = ['sensorW', 'sensorH', 'resW', 'resH', 'focal', 'camHeight', 'heading', 'tilt']; const patch = {}; fields.forEach(field => { const value = field === 'heading' ? normalizeHeading(readCameraField(field)) : readCameraField(field); const key = {sensorW: 'sensorWidthMm', sensorH: 'sensorHeightMm', resW: 'widthPx', resH: 'heightPx', focal: 'focalLengthMm', camHeight: 'heightM', heading: 'headingDeg', tilt: 'tiltDownDeg'}[field]; if (value != null) patch[key] = value; }); if (Object.keys(patch).length) { store.cancelPreview(); store.patchCamera(id, patch, 'camera-form'); } }
+    function headingFromPointer(event) {
+      const rect = els.headingScrubber?.getBoundingClientRect?.(); if (!rect || !rect.width) return null;
+      const ratio = Math.max(0, Math.min(1, (Number(event.clientX) - rect.left) / rect.width)); return normalizeHeading(ratio * 360);
+    }
+    function finishHeadingDrag(commit) {
+      if (!headingDrag) return false;
+      const drag = headingDrag; headingDrag = null;
+      try { drag.scrubber.releasePointerCapture?.(drag.pointerId); } catch (_) { /* capture may already be released */ }
+      if (commit) store.commitPreview('camera-heading-scrub'); else store.cancelPreview();
+      drag.scrubber.classList.remove('is-dragging');
+      return true;
+    }
+    function onHeadingPointerDown(event) {
+      const camera = selectedCamera(), scrubber = els.headingScrubber;
+      if (!scrubber || !camera || camera.locked === true || event.isPrimary === false || (event.button != null && event.button !== 0)) return;
+      const value = headingFromPointer(event); if (value == null) return;
+      event.preventDefault(); event.stopPropagation(); store.cancelPreview();
+      headingDrag = {pointerId: event.pointerId, cameraId: camera.id, scrubber, startHeading: normalizeHeading(camera.headingDeg) ?? 0};
+      scrubber.classList.add('is-dragging'); scrubber.focus({preventScroll: true});
+      try { scrubber.setPointerCapture?.(event.pointerId); } catch (_) { /* synthetic events may not have an active pointer */ }
+      store.beginPreview('camera', camera.id, {headingDeg: value});
+    }
+    function onHeadingPointerMove(event) {
+      if (!headingDrag || headingDrag.pointerId !== event.pointerId) return;
+      const value = headingFromPointer(event); if (value == null) return;
+      event.preventDefault(); event.stopPropagation(); store.beginPreview('camera', headingDrag.cameraId, {headingDeg: value});
+    }
+    function onHeadingPointerUp(event) {
+      if (!headingDrag || headingDrag.pointerId !== event.pointerId) return;
+      event.preventDefault(); event.stopPropagation(); finishHeadingDrag(event.type !== 'pointercancel');
+    }
+    function onHeadingKeydown(event) {
+      const scrubber = els.headingScrubber; if (!scrubber || event.target !== scrubber) return;
+      const camera = selectedCamera(); if (!camera || camera.locked === true) return;
+      const current = normalizeHeading(camera.headingDeg) ?? 0; let next = null;
+      if (event.key === 'Home') next = 0; else if (event.key === 'End') next = 359; else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { const delta = event.shiftKey ? 10 : 1; next = normalizeHeading(current + (event.key === 'ArrowRight' ? delta : -delta)); }
+      if (next == null) return;
+      event.preventDefault(); event.stopPropagation(); store.beginPreview('camera', camera.id, {headingDeg: next}); store.commitPreview('camera-heading-key');
+    }
     function applySensorPreset() { const key = $('sensorFormat')?.value; const preset = SENSOR_PRESETS[key]; if ($('sensorW')) { $('sensorW').readOnly = !preset; if (preset) $('sensorW').value = preset.w.toFixed(2); } if ($('sensorH')) { $('sensorH').readOnly = !preset; if (preset) $('sensorH').value = preset.h.toFixed(2); } commitCameraForm(); }
     function applyResolutionPreset() { const key = $('resolutionPreset')?.value; const preset = RESOLUTION_PRESETS[key]; if ($('resW')) { $('resW').readOnly = !preset; if (preset) $('resW').value = preset.w; } if ($('resH')) { $('resH').readOnly = !preset; if (preset) $('resH').value = preset.h; } commitCameraForm(); }
     function targetPatchForField(field) {
@@ -611,12 +679,14 @@
       mapController?.clearCameraPlacementPreview?.();
     }
     function setInteractionMode(mode) {
+      if (mode !== 'navigate') leaveFocusMapMode();
       if (mode !== 'place-camera') clearPendingCameraPlacement();
       store.cancelPreview();
       store.setInteractionMode(mode);
       renderInteraction(store.getState());
     }
     function beginCameraPlacement() {
+      leaveFocusMapMode();
       clearPendingCameraPlacement();
       store.cancelPreview();
       store.setObjectManagerTab('cameras');
@@ -667,6 +737,7 @@
         return;
       }
       if (state.uiState.interactionMode === 'place-target') createTargetFromMap(latlng);
+      else if (state.uiState.interactionMode === 'navigate' && !state.uiState.panelOpen.mapSettings && !legendDrag) { store.clearFocusedEntity(); closeInspector(); }
     }
     function handleCameraDrag(id, latlng) { store.beginPreview('camera', id, {position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}}); store.commitPreview('camera-drag'); }
     function handleCameraSelect(id) { store.setObjectManagerTab?.('cameras'); showDetails('camera', id); }
@@ -735,6 +806,7 @@
     function activateWorkspaceCamera(id, workspaceTab, selector) {
       const camera = store.getCamera(id);
       if (!camera || camera.enabled === false) return;
+      leaveFocusMapMode();
       store.cancelPreview();
       store.setActiveWorkspaceTab(workspaceTab);
       store.selectCamera(id);
@@ -746,6 +818,10 @@
     function activateComparisonCamera(id) { activateWorkspaceCamera(id, 'comparison', '.comparison-camera-button'); }
     function activateYoloCoverageCamera(id) { activateWorkspaceCamera(id, 'yolo', '.yolo-camera-button'); }
     function onShellClick(event) {
+      if (event.target.closest?.('#toggleObjectManager')) { togglePanel('objectManager'); return; }
+      if (event.target.closest?.('#openInspector')) { togglePanel('inspector'); return; }
+      if (event.target.closest?.('#focusMapButton')) { toggleFocusMap(); return; }
+      if (event.target.closest?.('#closeObjectManager')) { setPanel('objectManager', false); return; }
       const comparisonCamera = event.target.closest?.('[data-comparison-camera-id]');
       if (comparisonCamera) { activateComparisonCamera(comparisonCamera.dataset.comparisonCameraId); return; }
       const yoloCamera = event.target.closest?.('[data-yolo-camera-id]');
@@ -767,7 +843,7 @@
     }
     function onGlobalClick(event) { if (overflowMenu && !event.target.closest?.('.manager-overflow-menu, [data-entity-overflow]')) closeOverflowMenu(); if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
     function cancelPlacementInteraction() { clearPendingCameraPlacement(); store.cancelPreview(); if (store.getState().uiState.interactionMode !== 'navigate') store.setInteractionMode('navigate'); renderInteraction(store.getState()); }
-    function onKeydown(event) { if (event.key !== 'Escape') return; if (legendDrag && cancelLegendDrag()) { event.preventDefault(); event.stopPropagation(); return; } if (overflowMenu) { closeOverflowMenu({restoreFocus: true}); return; } const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { event.preventDefault(); cancelPlacementInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
+    function onKeydown(event) { if (event.key !== 'Escape') return; if (legendDrag && cancelLegendDrag()) { event.preventDefault(); event.stopPropagation(); return; } if (headingDrag && finishHeadingDrag(false)) { event.preventDefault(); event.stopPropagation(); return; } if (overflowMenu) { closeOverflowMenu({restoreFocus: true}); return; } const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { event.preventDefault(); cancelPlacementInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); if (state.uiState.focusMapMode) { event.preventDefault(); store.setFocusMapMode(false); return; } if (state.uiState.focusedEntity) { event.preventDefault(); store.clearFocusedEntity(); closeInspector(); return; } const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
     function onInput(event) { const element = event.target; if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
     function onChange(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
@@ -776,10 +852,11 @@
 
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraRailItems, 'scroll', () => closeOverflowMenu()); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
     listen(els.mapLegend, 'pointerdown', onLegendPointerDown); listen(els.mapLegend, 'pointermove', onLegendPointerMove); listen(els.mapLegend, 'pointerup', onLegendPointerUp); listen(els.mapLegend, 'pointercancel', onLegendPointerUp); listen(els.mapLegend, 'click', onLegendClick); listen(els.mapLegend, 'keydown', onLegendKeydown);
+    listen(els.headingScrubber, 'pointerdown', onHeadingPointerDown); listen(els.headingScrubber, 'pointermove', onHeadingPointerMove); listen(els.headingScrubber, 'pointerup', onHeadingPointerUp); listen(els.headingScrubber, 'pointercancel', onHeadingPointerUp); listen(els.headingScrubber, 'keydown', onHeadingKeydown);
     listen(els.inspector, 'click', onInspectorClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
     listen($('addCamera'), 'click', beginCameraPlacement);
     listen($('addTargetManager'), 'click', () => { setInteractionMode('place-target'); });
-    listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo()); listen($('openInspector'), 'click', showInspector);
+    listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo());
     if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); if (els.mapWorkspace) resizeObserver.observe(els.mapWorkspace); }
     listen(view, 'resize', scheduleInvalidate);
     loadSurface();

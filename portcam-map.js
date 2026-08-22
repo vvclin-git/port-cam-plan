@@ -23,7 +23,9 @@
     const canDrag = id => {
       const state = store.getState();
       const entity = getEntity(id);
-      return Boolean(entity && state.uiState?.interactionMode === 'navigate' && state.uiState?.[kind === 'camera' ? 'selectedCameraId' : 'selectedTargetId'] === id && entity.visible !== false && entity.locked !== true && entity.position);
+      const focused = state.uiState?.focusedEntity;
+      const focusedMatch = focused?.kind === kind && focused.id === id;
+      return Boolean(entity && state.uiState?.interactionMode === 'navigate' && focusedMatch && entity.visible !== false && entity.locked !== true && entity.position);
     };
     const onDragStart = () => {
       const id = marker.__portcamEntityId;
@@ -139,7 +141,7 @@
       const fovColorMode = state.uiState?.fovColorMode === 'camera' ? 'camera' : 'coverage';
       const cameraMode = fovColorMode === 'camera';
       const enabled = camera.enabled !== false;
-      const selected = !preview && state.uiState.selectedCameraId === camera.id;
+      const selected = !preview && state.uiState.focusedEntity?.kind === 'camera' && state.uiState.focusedEntity.id === camera.id;
       const emphasized = selected && enabled;
       const color = camera.color || CAMERA_COLORS[Math.max(0, state.cameraOrder.indexOf(camera.id)) % CAMERA_COLORS.length];
       const neutralColor = '#566273';
@@ -175,7 +177,7 @@
     }
     function syncCamera(camera, state) {
       let record = cameraLayers.get(camera.id);
-      const selected = state.uiState.selectedCameraId === camera.id;
+      const selected = state.uiState.focusedEntity?.kind === 'camera' && state.uiState.focusedEntity.id === camera.id;
       const visible = camera.visible !== false && camera.lifecycle !== 'draft-unplaced' && camera.position;
       if (!visible) { if (record) { clear(record, 'envelope'); clear(record, 'bands'); removeLayer(record, 'centerline'); remove(record.group); } return; }
       record = record || ensureCamera(camera);
@@ -231,7 +233,7 @@
     }
     function syncTarget(target, state) {
       if (!target.position) { const existing = targetLayers.get(target.id); if (existing) { removeLayer(existing, 'line'); remove(existing.group); } return; }
-      const record = ensureTarget(target), selected = state.uiState.selectedTargetId === target.id;
+      const record = ensureTarget(target), selected = state.uiState.focusedEntity?.kind === 'target' && state.uiState.focusedEntity.id === target.id, current = state.uiState.selectedTargetId === target.id;
       if (target.visible === false) { record.marker.options.draggable = false; record.marker.dragging?.disable?.(); removeLayer(record, 'line'); remove(record.group); return; }
       if (!map.hasLayer || !map.hasLayer(record.group)) record.group.addTo(map);
       const iconKey = targetIconKey(target, selected);
@@ -241,7 +243,7 @@
       if (record.marker.dragging) canDrag ? record.marker.dragging.enable() : record.marker.dragging.disable();
       removeLayer(record, 'line');
       const camera = state.camerasById[state.uiState.selectedCameraId];
-      if (selected && camera?.position) {
+      if ((selected || current) && camera?.position) {
         const observation = store.getObservation(camera.id, target.id), isVisible = observation && observation.visibilityState === 'visible';
         record.line = L.polyline([point(L, camera.position), point(L, target.position)], {color:isVisible ? '#222' : '#777', weight:isVisible ? 2 : 1, dashArray:isVisible ? null : '5,5', opacity:observation && observation.calculationState === 'failed' ? .35 : .7, pane: PANE_NAMES.analysis, interactive: false, bubblingMouseEvents: false}).addTo(record.group);
       }

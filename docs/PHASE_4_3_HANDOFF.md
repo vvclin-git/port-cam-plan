@@ -3,6 +3,7 @@
 ## Status
 
 - Phase 4.3 is implemented locally from clean baseline `8253133` on branch `codex/multi-cam`.
+- Phase 4.4 extends this handoff from clean commit `fc9566a`: Objects／Inspector panel toggles, Focus map, visual `focusedEntity` semantics, and heading scrubber are now documented in [`PHASE_4_4_HANDOFF.md`](./PHASE_4_4_HANDOFF.md). The Phase 4.3 placement and FOV contracts remain unchanged.
 - No schema, Observation cache, coverage formula, public API, commit, push, or remote mutation is part of this work.
 - `fovColorMode`, placement step, pending anchor, heading preview, and legend coordinates remain UI/controller-local state.
 
@@ -13,7 +14,7 @@
 - Step 2 derives the heading from `PortCamCore.bearingBetween(anchor, cursor)` on map movement. A second click is rejected when the cursor is less than 8 screen pixels from the anchor.
 - A valid second click calls `addCamera` once with `lifecycle: "placed"`, selects the new Active Camera, opens Details, and returns to Navigate. Undo removes the new Camera in one transaction.
 - Escape, mode changes, Place Target, restarting placement, and MapController destruction remove the pending preview and map-move listener effects without creating Store data.
-- Existing Camera relocation is Navigate-mode marker drag for the selected, visible, unlocked Camera. Locked markers cannot drag. `place-camera` no longer relocates an existing Camera.
+- Existing Camera relocation is Navigate-mode marker drag for the focused, visible, unlocked Camera. Active Camera／Current Target selections remain analysis context; `place-camera` no longer relocates an existing Camera.
 - Place Target remains one-click placement and returns to Navigate.
 
 ## FOV control and preview contract

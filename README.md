@@ -164,15 +164,15 @@ python -m unittest -v test_ray_cast_test.py
 
 [`docs/PHASE_3_1_HANDOFF.md`](./docs/PHASE_3_1_HANDOFF.md) 記錄本階段的共用 drag contract、wheel policy、pane 順序與人工驗收界線。
 
-- Camera／Target 共用 `PortCamMap.createEntityMarkerInteraction`，只有 selected、visible、unlocked 且 `navigate` 才能拖曳；preview 不改 revision/history/dirty，drag end 只 commit 一次。
-- Target 使用 `L.marker`／`L.divIcon` crosshair；FOV、YOLO、centerline、connection line 不攔截 pointer，只有 selected Target 顯示 connection line。
+- Camera／Target 共用 `PortCamMap.createEntityMarkerInteraction`，只有 focused、visible、unlocked 且 `navigate` 才能拖曳；Active Camera／Current Target selection 與 visual focus 分離。preview 不改 revision/history/dirty，drag end 只 commit 一次。
+- Target 使用 `L.marker`／`L.divIcon` crosshair；FOV、YOLO、centerline、connection line 不攔截 pointer，Current Target 保留 connection line，visual marker emphasis 則由 `focusedEntity` 控制。
 - Wheel 由 MapController 單一 non-passive handler 處理，正規化 pixel／line／page delta，同方向 180 ms burst 最多縮放一級，Ctrl+wheel 保留瀏覽器縮放。
 - Bottom Workspace Targets 分頁支援 Search、Select、Rename、Visible、Enabled、Locked、Duplicate、Delete、Fit Target；Search 是 UI-only state，不進 Project、history 或 dirty。
 - Camera／Target labels 預設開啟，Map Settings 可分別切換；rename 更新既有 tooltip，不重建或累積 labels。
 
 ## Phase 3.2 Unified Object Management UI
 
-左側 Object Manager 收斂 Cameras／Targets 表格；右側 Context Inspector 以 Details／Observation 顯示 focused entity 與 Current Target／Active Camera 的即時計算結果。Bottom Workspace 僅保留 Phase 4 的 Comparison／YOLO placeholders。細節見 [`docs/PHASE_3_2_HANDOFF.md`](./docs/PHASE_3_2_HANDOFF.md)。
+左側 Object Manager 收斂 Cameras／Targets 表格；右側 Inspector 以 Details／Observation 顯示 focused entity 與 Current Target／Active Camera 的即時計算結果。Phase 4.4 增加可獨立收合的 Objects／Inspector、UI-only Focus map 與 heading compass scrubber；Bottom Workspace 僅保留 Phase 4 的 Comparison／YOLO placeholders。細節見 [`docs/PHASE_4_4_HANDOFF.md`](./docs/PHASE_4_4_HANDOFF.md)。
 
 2026-08-17 UI polish 移除 Top Bar Observation、Camera Open Result 與舊 Result Drawer DOM；Target 建立後自動切到 Observation。Target marker drag preview 不會重建作用中的 `L.divIcon`，只在 selected／locked／enabled 樣式改變時更新 icon。
 

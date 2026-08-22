@@ -14,12 +14,12 @@
 
 - select, rename, visible, enabled, locked;
 - duplicate, delete, fit, Undo／Redo;
-- selected／visible／unlocked／`navigate` is the only drag-enabled state;
+- focused／visible／unlocked／`navigate` is the drag-enabled state; Phase 4.4 keeps Active Camera／Current Target selection independent from visual focus;
 - drag preview does not change revision, history, or dirty;
 - drag end commits one `${kind}-drag` transaction and therefore one revision／history entry;
 - locked entities remain selectable and visible, but calculation fields and map drag are disabled.
 
-`PortCamMap.createEntityMarkerInteraction({kind, marker, store})` owns the shared marker lifecycle. The MapController subscription projects preview state immediately to marker position, FOV／bands, connection line, Drawer, and list. Camera-only behavior includes two-stage UI-only placement preview, Navigate-mode marker relocation, FOV／Fit FOV, and selected-Camera Scene export. Target creation is placed and committed immediately; Target retains dimensions, heading, and Target-only Drawer behavior.
+`PortCamMap.createEntityMarkerInteraction({kind, marker, store})` owns the shared marker lifecycle. The MapController subscription projects preview state immediately to marker position, FOV／bands, connection line, Inspector, and list. Camera-only behavior includes two-stage UI-only placement preview, Navigate-mode marker relocation, FOV／Fit FOV, and Active-Camera Scene export. Phase 4.4 makes marker drag and visual emphasis follow `focusedEntity`, while Active Camera／Current Target selections remain independent. Target creation is placed and committed immediately; Target retains dimensions, heading, and Inspector behavior.
 
 ## Map interaction policy
 

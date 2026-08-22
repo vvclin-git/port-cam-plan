@@ -1852,3 +1852,7 @@ Target box schema 可以先存在，但 UI 與 calculation 暫時只使用 Phase
 `docs/UI (1).png` 至 `docs/UI (4).png` 在重新製圖前皆為 **illustrative draft**，不是實作規格；其中的 Tilt 正負號與 Horizon 數值不可直接當作 calculation contract。
 
 Phase 0 的實際完成狀態、驗證命令與未解除風險以 [`PHASE_0_HANDOFF.md`](./PHASE_0_HANDOFF.md) 為唯一交接依據。
+
+## 25.6 Phase 4.4 UI projection delta
+
+Phase 4.4 的 live UI projection 以 [`PHASE_4_4_HANDOFF.md`](./PHASE_4_4_HANDOFF.md) 為準：`selectedCameraId`／`selectedTargetId` 分別是 Active Camera／Current Target，`focusedEntity` 只代表 visual/edit focus；`clearFocusedEntity()` 不清除前兩者。Objects／Inspector panel state 與 `focusMapMode` 屬於 UI-only state，不進 Project／Scene schema、Observation cache、revision、history、dirty、Undo／Redo 或 export。Marker drag、FOV emphasis 與 Inspector Details follow `focusedEntity`，而 Observation／Comparison／YOLO 仍使用 Active Camera／Current Target context。
