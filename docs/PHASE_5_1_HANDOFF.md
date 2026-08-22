@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase 5.1 Camera Defaults is implemented in the current working tree on `codex/multi-cam`.
-- The verified pre-Phase-5.1 Git baseline was `6d85dc2`; no commit, push, reset, or remote mutation was performed for this implementation.
+- Phase 5.1 Camera Defaults is committed on `codex/multi-cam` as `2dfb027` (`Add Phase 5.1 project camera defaults settings`); the live checkout verified that `HEAD` and `origin/codex/multi-cam` were aligned before Phase 5.2 work began.
+- The verified pre-Phase-5.1 Git baseline was `6d85dc2`. Phase 5.2 Camera Preset Library changes are intentionally separate and currently live in the working tree; they do not rewrite or replace the Phase 5.1 commit.
 - Camera project/scene schemas, Store persistence, FOV/YOLO formulas, Observation cache, and the Python consumer remain unchanged.
 
 ## Camera Defaults contract

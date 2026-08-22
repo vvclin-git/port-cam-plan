@@ -287,6 +287,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .settings-dialog-scroll { min-height: 0; overflow: auto; padding: 0 14px 14px; }
 .settings-dialog-scroll .panel-section:first-child { padding-top: 6px; }
 .settings-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 12px 0 0; }
+.settings-preset-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 8px; }
+.preset-library-section { margin-top: 4px; padding-top: 12px !important; border-top: 1px solid var(--line); }
+.preset-apply-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 7px; margin-bottom: 3px; }
+.preset-apply-row .action-button { min-height: 34px; }
+.camera-preset-inspector { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
 .settings-dialog-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 7px; padding: 11px 14px; border-top: 1px solid var(--line); background: var(--panel-muted); }
 .settings-dialog-footer .action-button { min-width: 92px; }
 .settings-accordion { display: grid; gap: 8px; }

@@ -5,16 +5,18 @@
     root.PortCamMap || (typeof require === 'function' ? require('./portcam-map.js') : null),
     root.PortCamComparison || (typeof require === 'function' ? require('./portcam-comparison.js') : null),
     root.PortCamYoloCoverage || (typeof require === 'function' ? require('./portcam-yolo-coverage.js') : null),
-    root.PortCamCameraDefaults || (typeof require === 'function' ? require('./portcam-camera-defaults.js') : null)
+    root.PortCamCameraDefaults || (typeof require === 'function' ? require('./portcam-camera-defaults.js') : null),
+    root.PortCamCameraPresets || (typeof require === 'function' ? require('./portcam-camera-presets.js') : null)
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamUI = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets) {
   'use strict';
   if (!Core) throw new Error('PortCamUI requires PortCamCore');
   if (!Comparison) throw new Error('PortCamUI requires PortCamComparison');
   if (!YoloCoverage) throw new Error('PortCamUI requires PortCamYoloCoverage');
   if (!CameraDefaults) throw new Error('PortCamUI requires PortCamCameraDefaults');
+  if (!CameraPresets) throw new Error('PortCamUI requires PortCamCameraPresets');
 
   const CAMERA_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#a16207'];
   const TILE_PADDING = 1;
@@ -75,6 +77,7 @@
     const view = doc.defaultView || (typeof window !== 'undefined' ? window : root);
     const $ = id => doc.getElementById(id);
     const cameraDefaultsRepository = args.cameraDefaultsRepository || CameraDefaults.createRepository({storage: args.cameraDefaultsStorage || null, factoryDefaults: args.cameraDefaults || CameraDefaults.FACTORY_DEFAULTS});
+    const cameraPresetsRepository = args.cameraPresetsRepository || CameraPresets.createRepository({storage: args.cameraPresetsStorage || null});
     const L = args.leaflet || root.L;
     const map = args.map;
     const mapLayers = args.baseMapLayers || createTileLayers(L, map);
@@ -105,6 +108,8 @@
     let projectSettingsSensorMode = null;
     let projectSettingsResolutionMode = null;
     let projectSettingsAccordion = {camera: true, target: false};
+    let projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID;
+    let inspectorPresetSelectionId = CameraPresets.FACTORY_PRESET_ID;
     let projectSettingsRestoreFocus = null;
     const labelVisibility = {camera: true, target: true};
 
@@ -124,6 +129,7 @@
       targetFormError: $('targetFormError'), exportState: $('exportState'), exportError: $('exportError'), headingScrubber: $('headingScrubber')
       ,projectSettingsModal: $('projectSettingsModal'), projectSettingsDialog: $('projectSettingsDialog'), projectSettingsClose: $('projectSettingsClose')
       ,projectSettingsError: $('projectSettingsError'), projectSettingsStatus: $('projectSettingsStatus')
+      ,cameraPresetSelect: $('cameraPresetSelect'), cameraPresetApply: $('cameraPresetApply'), cameraPresetStatus: $('cameraPresetStatus')
     };
 
     function listen(target, event, handler, options) {
@@ -171,6 +177,7 @@
       if ($('projectResH')) $('projectResH').readOnly = !customResolution;
     }
     function setProjectSettingsError(message) { if (els.projectSettingsError) els.projectSettingsError.textContent = message || ''; }
+    function setProjectSettingsStatus(message) { if (els.projectSettingsStatus) els.projectSettingsStatus.textContent = message || ''; }
     function updateProjectSettingsDraftFromForm() { if (projectSettingsOpen) projectSettingsDraft = projectSettingsDefaultsFromForm(); }
     function applyProjectSensorPreset() {
       const key = $('projectSensorFormat')?.value || 'custom';
@@ -190,6 +197,166 @@
       if ($('projectResW')) $('projectResW').readOnly = Boolean(preset);
       if ($('projectResH')) $('projectResH').readOnly = Boolean(preset);
     }
+    function projectPresetList() { return cameraPresetsRepository.list(); }
+    function selectedProjectPreset() {
+      const id = $('projectPresetSelect')?.value || projectSettingsPresetId;
+      return cameraPresetsRepository.get(id);
+    }
+    function syncProjectPresetLibrary() {
+      const select = $('projectPresetSelect');
+      if (!select) return;
+      const presets = projectPresetList();
+      const available = presets.some(preset => preset.id === projectSettingsPresetId);
+      if (!available) projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID;
+      select.replaceChildren();
+      presets.forEach(preset => {
+        const option = doc.createElement('option');
+        option.value = preset.id;
+        option.textContent = preset.id === CameraPresets.FACTORY_PRESET_ID ? `${preset.name} · built-in` : preset.name;
+        select.appendChild(option);
+      });
+      select.value = projectSettingsPresetId;
+      const factory = projectSettingsPresetId === CameraPresets.FACTORY_PRESET_ID;
+      ['projectPresetUpdate', 'projectPresetRename', 'projectPresetDelete'].forEach(id => { const button = $(id); if (button) button.disabled = factory; });
+      renderInspectorPresetOptions(selectedCamera());
+    }
+    function setProjectSettingsDraftFromPreset(preset, message) {
+      if (!preset) { setProjectSettingsError('找不到指定 Camera Preset。'); return false; }
+      projectSettingsPresetId = preset.id;
+      projectSettingsDraft = clone(preset.settings);
+      projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft);
+      projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft);
+      setProjectSettingsError('');
+      setProjectSettingsStatus(message || `已載入 ${preset.name}；仍需按 Save Defaults 才會更新目前 defaults。`);
+      syncProjectSettingsForm(projectSettingsDraft);
+      syncProjectPresetLibrary();
+      return true;
+    }
+    function promptPresetName(defaultName) {
+      const value = view.prompt('Camera Preset 名稱', defaultName || 'New Camera Preset');
+      return value == null ? null : String(value).trim();
+    }
+    function reportPresetFailure(result) {
+      setProjectSettingsError(`Camera Preset 操作失敗：${result?.error?.message || '未知錯誤'} 原本已儲存的 Preset 清單已保留。`);
+      return false;
+    }
+    function createProjectPresetFromSettings(settingsValue, sourceLabel) {
+      const checked = CameraDefaults.validateDefaults(settingsValue);
+      if (!checked.ok) { setProjectSettingsError(`無法建立 Preset：${checked.error}`); return false; }
+      const name = promptPresetName(sourceLabel || 'New Camera Preset');
+      if (name === null) return false;
+      if (!name) { setProjectSettingsError('Preset 名稱不可為空。'); return false; }
+      const result = cameraPresetsRepository.createPreset({name, settings: checked.value});
+      if (!result.ok) return reportPresetFailure(result);
+      projectSettingsPresetId = result.preset.id;
+      syncProjectPresetLibrary();
+      setProjectSettingsError('');
+      setProjectSettingsStatus(`已建立 Preset「${result.preset.name}」。`);
+      return true;
+    }
+    function loadProjectPreset() { return setProjectSettingsDraftFromPreset(selectedProjectPreset()); }
+    function setProjectPresetAsDefault() {
+      const preset = selectedProjectPreset();
+      if (!preset) return setProjectSettingsError('找不到指定 Camera Preset。');
+      const result = cameraDefaultsRepository.save(preset.settings);
+      if (!result.ok) { setProjectSettingsError(`Camera Defaults 儲存失敗：${result.error.message} 原本已儲存值已保留；請確認瀏覽器網站資料權限後再試。`); return false; }
+      projectSettingsDraft = clone(result.defaults);
+      projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft);
+      projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft);
+      setProjectSettingsError('');
+      setProjectSettingsStatus(`已將 Preset「${preset.name}」設為目前 Camera Defaults；此動作已直接保存，Cancel 不會回復。`);
+      syncProjectSettingsForm(projectSettingsDraft);
+      return true;
+    }
+    function updateProjectPreset() {
+      const preset = selectedProjectPreset();
+      if (!preset || preset.id === CameraPresets.FACTORY_PRESET_ID) { setProjectSettingsError('Factory Defaults 不可更新。'); return false; }
+      const result = cameraPresetsRepository.updatePreset(preset.id, {settings: projectSettingsDefaultsFromForm()});
+      if (!result.ok) return reportPresetFailure(result);
+      syncProjectPresetLibrary();
+      setProjectSettingsError('');
+      setProjectSettingsStatus(`已更新 Preset「${result.preset.name}」；目前 Camera Defaults 未自動變更。`);
+      return true;
+    }
+    function renameProjectPreset() {
+      const preset = selectedProjectPreset();
+      if (!preset || preset.id === CameraPresets.FACTORY_PRESET_ID) { setProjectSettingsError('Factory Defaults 不可重新命名。'); return false; }
+      const name = promptPresetName(preset.name);
+      if (name === null) return false;
+      if (!name) { setProjectSettingsError('Preset 名稱不可為空。'); return false; }
+      const result = cameraPresetsRepository.renamePreset(preset.id, name);
+      if (!result.ok) return reportPresetFailure(result);
+      syncProjectPresetLibrary();
+      setProjectSettingsError('');
+      setProjectSettingsStatus(`已重新命名 Preset 為「${result.preset.name}」。`);
+      return true;
+    }
+    function duplicateProjectPreset() {
+      const preset = selectedProjectPreset();
+      if (!preset) return setProjectSettingsError('找不到指定 Camera Preset。');
+      const result = cameraPresetsRepository.duplicatePreset(preset.id);
+      if (!result.ok) return reportPresetFailure(result);
+      projectSettingsPresetId = result.preset.id;
+      syncProjectPresetLibrary();
+      setProjectSettingsError('');
+      setProjectSettingsStatus(`已複製為 Preset「${result.preset.name}」。`);
+      return true;
+    }
+    function deleteProjectPreset() {
+      const preset = selectedProjectPreset();
+      if (!preset || preset.id === CameraPresets.FACTORY_PRESET_ID) { setProjectSettingsError('Factory Defaults 不可刪除。'); return false; }
+      if (!view.confirm(`刪除 Preset「${preset.name}」？`)) return false;
+      const result = cameraPresetsRepository.deletePreset(preset.id);
+      if (!result.ok) return reportPresetFailure(result);
+      projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID;
+      syncProjectPresetLibrary();
+      setProjectSettingsError('');
+      setProjectSettingsStatus(`已刪除 Preset「${preset.name}」。`);
+      return true;
+    }
+    function ensureInspectorPresetControls() {
+      let mount = $('cameraPresetMount');
+      const body = rootElement.querySelector?.('[data-section-body="lens"]');
+      if (!body) return false;
+      if (!mount) {
+        mount = doc.createElement('div');
+        mount.id = 'cameraPresetMount';
+        mount.className = 'camera-preset-inspector';
+        mount.innerHTML = '<div class="preset-apply-row"><div class="field"><label class="field-label" for="cameraPresetSelect">Camera Preset</label><select class="field-control" id="cameraPresetSelect"></select></div><button class="action-button" id="cameraPresetApply" type="button">Apply</button></div><div class="tiny" id="cameraPresetStatus" role="status" aria-live="polite"></div>';
+        body.insertBefore(mount, body.firstChild);
+      }
+      els.cameraPresetSelect = $('cameraPresetSelect');
+      els.cameraPresetApply = $('cameraPresetApply');
+      els.cameraPresetStatus = $('cameraPresetStatus');
+      return true;
+    }
+    function renderInspectorPresetOptions(camera) {
+      if (!ensureInspectorPresetControls()) return;
+      const select = els.cameraPresetSelect;
+      if (!select) return;
+      const presets = cameraPresetsRepository.list();
+      if (!presets.some(preset => preset.id === inspectorPresetSelectionId)) inspectorPresetSelectionId = CameraPresets.FACTORY_PRESET_ID;
+      select.replaceChildren();
+      presets.forEach(preset => { const option = doc.createElement('option'); option.value = preset.id; option.textContent = preset.id === CameraPresets.FACTORY_PRESET_ID ? `${preset.name} · built-in` : preset.name; select.appendChild(option); });
+      select.value = inspectorPresetSelectionId;
+      select.disabled = !camera;
+      if (els.cameraPresetApply) els.cameraPresetApply.disabled = !camera || camera.locked === true || !cameraPresetsRepository.get(inspectorPresetSelectionId);
+      const status = cameraPresetsRepository.getStatus();
+      if (status.error && els.cameraPresetStatus && !els.cameraPresetStatus.textContent) els.cameraPresetStatus.textContent = `Preset Library 使用 Factory Defaults：${status.error.message}`;
+    }
+    function applyInspectorPreset() {
+      const camera = selectedCamera();
+      const presetId = els.cameraPresetSelect?.value || inspectorPresetSelectionId;
+      const preset = cameraPresetsRepository.get(presetId);
+      if (!camera) { if (els.cameraPresetStatus) els.cameraPresetStatus.textContent = '請先選取 Camera。'; return false; }
+      if (camera.locked) { if (els.cameraPresetStatus) els.cameraPresetStatus.textContent = 'Locked Camera 不可套用 Preset。'; return false; }
+      if (!preset) { if (els.cameraPresetStatus) els.cameraPresetStatus.textContent = '找不到指定 Camera Preset。'; return false; }
+      const result = store.patchCamera(camera.id, preset.settings, 'camera-preset-apply');
+      if (result === false) { if (els.cameraPresetStatus) els.cameraPresetStatus.textContent = 'Camera 已鎖定或已不存在，Preset 未套用。'; return false; }
+      inspectorPresetSelectionId = preset.id;
+      if (els.cameraPresetStatus) els.cameraPresetStatus.textContent = `已套用 Preset「${preset.name}」。`;
+      return true;
+    }
     function renderProjectSettingsAccordion() {
       const controls = {camera: $('projectCameraAccordionToggle'), target: $('projectTargetAccordionToggle')};
       const panels = {camera: $('projectCameraAccordionPanel'), target: $('projectTargetAccordionPanel')};
@@ -206,9 +373,14 @@
       if (!projectSettingsOpen) return;
       renderProjectSettingsAccordion();
       syncProjectSettingsForm(projectSettingsDraft);
+      syncProjectPresetLibrary();
       const status = cameraDefaultsRepository.getStatus();
       if (status.error && els.projectSettingsError && !els.projectSettingsError.textContent) {
         els.projectSettingsError.textContent = `無法讀取本機 Camera Defaults，已使用 Factory Defaults。${status.error.message} 請確認瀏覽器網站資料權限後重試。`;
+      }
+      const presetStatus = cameraPresetsRepository.getStatus();
+      if (presetStatus.error && els.projectSettingsError && !els.projectSettingsError.textContent) {
+        els.projectSettingsError.textContent = `無法讀取 Camera Preset Library，已保留 Factory Defaults。${presetStatus.error.message} 請確認瀏覽器網站資料權限後重試。`;
       }
     }
     function openProjectSettings() {
@@ -218,16 +390,17 @@
       projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft);
       projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft);
       projectSettingsAccordion = {camera: true, target: false};
+      projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID;
       projectSettingsOpen = true;
       setProjectSettingsError('');
-      if (els.projectSettingsStatus) els.projectSettingsStatus.textContent = '';
+      setProjectSettingsStatus('');
       renderProjectSettings();
       const focus = () => { const first = $('projectCameraHeight') || els.projectSettingsClose; first?.focus?.({preventScroll: true}); };
       (view.requestAnimationFrame || (callback => view.setTimeout(callback, 0)))(focus);
     }
     function closeProjectSettings({restoreFocus = true} = {}) {
       if (!projectSettingsOpen) return;
-      projectSettingsOpen = false; projectSettingsDraft = null; projectSettingsSensorMode = null; projectSettingsResolutionMode = null; renderProjectSettings();
+      projectSettingsOpen = false; projectSettingsDraft = null; projectSettingsSensorMode = null; projectSettingsResolutionMode = null; projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID; renderProjectSettings();
       const focus = projectSettingsRestoreFocus;
       projectSettingsRestoreFocus = null;
       if (restoreFocus && focus?.isConnected && typeof focus.focus === 'function') focus.focus({preventScroll: true});
@@ -245,7 +418,7 @@
       const defaults = cameraDefaultsFromCamera(selectedCamera());
       const checked = CameraDefaults.validateDefaults(defaults);
       if (!checked.ok) { setProjectSettingsError(`選取的 Camera 參數無法套用：${checked.error}`); return; }
-      projectSettingsDraft = checked.value; projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft); projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft); setProjectSettingsError(''); syncProjectSettingsForm(projectSettingsDraft);
+      projectSettingsDraft = checked.value; projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft); projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft); projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID; setProjectSettingsError(''); setProjectSettingsStatus('已將選取 Camera 的參數載入表單；仍需按 Save Defaults 才會保存。'); syncProjectSettingsForm(projectSettingsDraft); syncProjectPresetLibrary();
     }
     function scheduleInvalidate() {
       if (!map || !map.invalidateSize) return;
@@ -367,6 +540,7 @@
       if ($('cameraInspectorSub')) $('cameraInspectorSub').textContent = camera ? (camera.position ? 'Selected Camera' : 'Draft · 尚未定位') : '從 Rail 選取 Camera';
       if ($('cameraLifecycle')) { $('cameraLifecycle').textContent = !camera ? 'None' : camera.lifecycle === 'draft-unplaced' ? 'Draft' : camera.locked ? 'Locked' : camera.enabled === false ? 'Disabled' : 'Placed'; $('cameraLifecycle').className = `status-badge ${!camera ? '' : camera.lifecycle === 'draft-unplaced' ? 'draft' : camera.locked ? '' : camera.enabled === false ? '' : 'placed'}`; }
       syncCameraFieldValues(camera);
+      renderInspectorPresetOptions(camera);
       renderHeadingScrubber(camera);
       const metrics = computeMetrics(camera, state);
       const metricValues = metrics && !metrics.error ? {pixelPitch: `${(metrics.optics.pixelPitchMm * 1000).toFixed(2)} µm`, hfov: fmtDeg(metrics.optics.horizontalFovDeg), vfov: fmtDeg(metrics.optics.verticalFovDeg), horizon: `${metrics.horizon.distanceKm.toFixed(2)} km`, nearR: fmtM(metrics.envelope.nearDistanceM), farR: fmtM(metrics.envelope.farDistanceM)} : {pixelPitch: '—', hfov: '—', vfov: '—', horizon: '—', nearR: '—', farR: '—'};
@@ -978,7 +1152,15 @@
       }
       if (button.id === 'projectSettingsClose' || button.id === 'projectSettingsCancel') return closeProjectSettings();
       if (button.id === 'projectUseSelectedCamera') return useSelectedCameraForProjectSettings();
-      if (button.id === 'projectRestoreFactory') { projectSettingsDraft = cameraDefaultsRepository.factoryDefaults(); projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft); projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft); setProjectSettingsError(''); syncProjectSettingsForm(projectSettingsDraft); return; }
+      if (button.id === 'projectRestoreFactory') { projectSettingsDraft = cameraDefaultsRepository.factoryDefaults(); projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft); projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft); projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID; setProjectSettingsError(''); setProjectSettingsStatus(''); syncProjectSettingsForm(projectSettingsDraft); syncProjectPresetLibrary(); return; }
+      if (button.id === 'projectPresetLoad') return loadProjectPreset();
+      if (button.id === 'projectPresetSetDefault') return setProjectPresetAsDefault();
+      if (button.id === 'projectPresetCreateFromForm') return createProjectPresetFromSettings(projectSettingsDefaultsFromForm(), 'New Camera Preset');
+      if (button.id === 'projectPresetCreateFromCamera') return createProjectPresetFromSettings(cameraDefaultsFromCamera(selectedCamera()), selectedCamera()?.name || 'Camera Preset');
+      if (button.id === 'projectPresetUpdate') return updateProjectPreset();
+      if (button.id === 'projectPresetRename') return renameProjectPreset();
+      if (button.id === 'projectPresetDuplicate') return duplicateProjectPreset();
+      if (button.id === 'projectPresetDelete') return deleteProjectPreset();
       if (button.id === 'projectSaveDefaults') return saveProjectSettings();
     }
     function cancelPlacementInteraction() { clearPendingCameraPlacement(); store.cancelPreview(); if (store.getState().uiState.interactionMode !== 'navigate') store.setInteractionMode('navigate'); renderInteraction(store.getState()); }
@@ -1001,10 +1183,10 @@
       const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { event.preventDefault(); cancelPlacementInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); if (state.uiState.focusMapMode) { event.preventDefault(); store.setFocusMapMode(false); return; } if (state.uiState.focusedEntity) { event.preventDefault(); store.clearFocusedEntity(); closeInspector(); return; } const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector();
     }
     function onInput(event) { const element = event.target; if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
-    function onChange(event) { const element = event.target; if (element.id === 'projectSensorFormat') return applyProjectSensorPreset(); if (element.id === 'projectResolutionPreset') return applyProjectResolutionPreset(); if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
+    function onChange(event) { const element = event.target; if (element.id === 'projectSensorFormat') return applyProjectSensorPreset(); if (element.id === 'projectResolutionPreset') return applyProjectResolutionPreset(); if (element.id === 'projectPresetSelect') { projectSettingsPresetId = element.value; syncProjectPresetLibrary(); return; } if (element.id === 'cameraPresetSelect') { inspectorPresetSelectionId = element.value; if (els.cameraPresetApply) els.cameraPresetApply.disabled = !selectedCamera() || selectedCamera()?.locked === true; return; } if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
     function onEnter(event) { if (event.key === 'Enter') { const element = event.target; if (element.dataset.cameraField) { event.preventDefault(); commitCameraField(element.dataset.cameraField); } if (element.dataset.targetField) { event.preventDefault(); commitTargetField(element.dataset.targetField); } } }
-    function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); }
+    function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); if (event.target.closest?.('#cameraPresetApply')) applyInspectorPreset(); }
 
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraRailItems, 'scroll', () => closeOverflowMenu()); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
     listen(els.mapLegend, 'pointerdown', onLegendPointerDown); listen(els.mapLegend, 'pointermove', onLegendPointerMove); listen(els.mapLegend, 'pointerup', onLegendPointerUp); listen(els.mapLegend, 'pointercancel', onLegendPointerUp); listen(els.mapLegend, 'click', onLegendClick); listen(els.mapLegend, 'keydown', onLegendKeydown);
@@ -1019,7 +1201,7 @@
     render(store.getState());
     scheduleInvalidate();
 
-    const publicApi = {store, mapController, cameraDefaultsRepository, render, openProjectSettings, closeProjectSettings, destroy() { if (destroyed) return; destroyed = true; pendingCameraPlacement = null; cameraPlacementDefaultsSnapshot = null; closeProjectSettings({restoreFocus: false}); finishLegendDrag(); closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); if (legendClampFrame != null && view.cancelAnimationFrame) view.cancelAnimationFrame(legendClampFrame); legendClampFrame = null; mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
+    const publicApi = {store, mapController, cameraDefaultsRepository, cameraPresetsRepository, render, openProjectSettings, closeProjectSettings, destroy() { if (destroyed) return; destroyed = true; pendingCameraPlacement = null; cameraPlacementDefaultsSnapshot = null; closeProjectSettings({restoreFocus: false}); finishLegendDrag(); closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); if (legendClampFrame != null && view.cancelAnimationFrame) view.cancelAnimationFrame(legendClampFrame); legendClampFrame = null; mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
     const testWindow = view || root; testWindow.projectStoreForTest = store; testWindow.mapControllerForTest = mapController; testWindow.cameraSceneExportForTest = {buildCameraScene: publicApi.buildCameraScene, serializeCameraScene: publicApi.serializeCameraScene}; testWindow.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry}; testWindow.cameraMarkerForTest = {getLatLng() { const id = selectedCameraId(); const snapshot = id && mapController.getCameraLayerSnapshot(id); return snapshot?.markerPosition && L?.latLng ? L.latLng(snapshot.markerPosition.lat, snapshot.markerPosition.lng) : snapshot?.markerPosition || null; }};
     return publicApi;
   }
