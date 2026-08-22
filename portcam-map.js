@@ -267,6 +267,17 @@
     function fitTarget(id) { const record = targetLayers.get(id); if (record) map.setView(record.marker.getLatLng(), Math.max(map.getZoom(), 15)); }
     function fitCameraFov(id) { const record = cameraLayers.get(id); if (record && record.envelope[0]?.getBounds) map.fitBounds(record.envelope[0].getBounds()); }
     function fitCameraAndTarget(cameraId, targetId) { const camera = cameraLayers.get(cameraId), target = targetLayers.get(targetId); if (camera && target && map.fitBounds) map.fitBounds([camera.marker.getLatLng(), target.marker.getLatLng()], {padding: [48, 48]}); }
+    function getViewport() {
+      const center = map.getCenter?.();
+      const zoom = map.getZoom?.();
+      if (!center || !Number.isFinite(Number(zoom))) return null;
+      return {center: {latitudeDeg: Number(center.lat), longitudeDeg: Number(center.lng)}, zoom: Number(zoom)};
+    }
+    function setViewport(viewport) {
+      if (!viewport || !map.setView) return false;
+      map.setView([Number(viewport.center.latitudeDeg), Number(viewport.center.longitudeDeg)], Number(viewport.zoom), {animate: false});
+      return true;
+    }
     function setLabelVisibility(next) { if (next && typeof next.camera === 'boolean') labels.camera = next.camera; if (next && typeof next.target === 'boolean') labels.target = next.target; cameraLayers.forEach(record => setLabel(record, 'camera', labels.camera)); targetLayers.forEach(record => setLabel(record, 'target', labels.target)); }
     function normalizeWheelDelta(event) { const mode = Number(event.deltaMode || 0); if (mode === 1) return Number(event.deltaY || 0) * 16; if (mode === 2) return Number(event.deltaY || 0) * (wheelContainer?.clientHeight || map.getSize?.().y || 800); return Number(event.deltaY || 0); }
     function wheelZoom(event) {
@@ -283,7 +294,7 @@
     function handleMapClick(event) { if (!destroyed && event?.latlng && onMapClick) onMapClick(event.latlng, event.originalEvent); }
     function handleMapMove(event) { if (!destroyed && event?.latlng && onMapMove) onMapMove(event.latlng, event.originalEvent); }
     ensurePanes(); bindWheel(); map.on?.('click', handleMapClick); map.on?.('mousemove', handleMapMove);
-    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
+    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, getViewport, setViewport, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
   }
   return {createMapController, createEntityMarkerInteraction, coverageBandRanges, CAMERA_COLORS, COVERAGE_COLORS, PANE_NAMES};
 }));

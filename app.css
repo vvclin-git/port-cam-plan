@@ -45,6 +45,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .dirty-badge { color: var(--muted); background: #f0f3f7; }
 .dirty-badge.is-dirty { color: #8a4b00; background: var(--amber-soft); }
 .top-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.project-menu { position: relative; }
+.project-menu-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 2100; width: 190px; padding: 4px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
+.project-menu-popover[hidden] { display: none; }
+.project-menu-popover button { display: block; width: 100%; min-height: 34px; padding: 7px 9px; border: 0; border-radius: 5px; color: var(--text); background: transparent; text-align: left; font-size: 12px; }
+.project-menu-popover button:hover, .project-menu-popover button:focus-visible { color: var(--accent); background: var(--accent-soft); }
 .panel-control-group { display: inline-flex; align-items: center; gap: 4px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-muted); }
 .icon-button, .top-button, .toolbar-button, .panel-close, .mini-button, .rail-icon { border: 1px solid var(--line); background: #fff; color: var(--text); border-radius: 7px; }
 .icon-button, .panel-close { width: 34px; height: 32px; padding: 0; font-size: 16px; }
@@ -303,6 +308,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .camera-preset-inspector { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
 .settings-dialog-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 7px; padding: 11px 14px; border-top: 1px solid var(--line); background: var(--panel-muted); }
 .settings-dialog-footer .action-button { min-width: 92px; }
+.project-action-dialog { width: min(460px, calc(100vw - 32px)); }
+.project-dialog-copy { margin: 6px 0 4px; color: var(--text); line-height: 1.55; }
+.project-action-backdrop { z-index: 2300; }
 .settings-accordion { display: grid; gap: 8px; }
 .settings-accordion-item { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
 .settings-accordion-heading { margin: 0; }

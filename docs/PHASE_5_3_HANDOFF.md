@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase 5.3 is implemented in the current working tree on `codex/multi-cam` and remains uncommitted for acceptance review.
-- The verified Phase 5.2 baseline is commit `97c45d9` (`Add Phase 5.2 camera preset library`), based on Phase 5.1 commit `2dfb027`. No reset, overwrite, or reconstruction was performed.
+- Phase 5.3 is committed on `codex/multi-cam` as `5c6a8ad` (`Add Phase 5.3 camera preset library transfer`).
+- The verified Phase 5.2 baseline is commit `97c45d9` (`Add Phase 5.2 camera preset library`), based on Phase 5.1 commit `2dfb027`. Phase 5.4 work is separate and remains uncommitted in the current working tree; no reset, overwrite, or reconstruction was performed.
 - This phase does not modify `camera-defaults/1.0`, `camera-presets/1.0`, `camera-project/1.0`, `camera-scene/1.1`, Store persistence, FOV/YOLO formulas, Observation caching, or the Python consumer.
 
 ## Transfer contract
@@ -28,7 +28,7 @@
 
 ## Verification
 
-- Node: `node --test test_camera_preset_transfer.js test_camera_presets.js test_camera_defaults.js test_portcam_core.js test_portcam_store.js test_portcam_map.js test_camera_comparison.js test_yolo_coverage.js` — 60/60 passed.
+- Node: the Phase 5.3 verification command passed 60/60 before Phase 5.4 work began.
 - Static: all root JavaScript files pass `node --check`; `git diff --check` passes.
 - Browser smoke used the real local app at 1366×768, 1920×1080, and iPad Pro 11/DPR2 emulation. It covered bundle download filename/content, draft-only import, Merge apply and reload persistence, Replace summary and second confirmation, defaults opt-out, Cancel without mutation, focus trap/Escape restoration, selector refresh, clean Project history, and zero console errors/warnings.
 - Python tests were not run as requested; this phase does not modify Python or downstream calculation consumers.

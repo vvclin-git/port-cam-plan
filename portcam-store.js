@@ -1,11 +1,15 @@
 /* Normalized, DOM/Leaflet-free project state for port-cam-plan. */
 (function (root, factory) {
-  const api = factory(root.PortCamCore || (typeof require === 'function' ? require('./portcam-core.js') : null));
+  const api = factory(
+    root.PortCamCore || (typeof require === 'function' ? require('./portcam-core.js') : null),
+    root.PortCamProject || (typeof require === 'function' ? require('./portcam-project.js') : null)
+  );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamStore = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, Project) {
   'use strict';
   if (!Core) throw new Error('PortCamStore requires PortCamCore');
+  if (!Project) throw new Error('PortCamStore requires PortCamProject');
   const CALCULATOR_MODEL_VERSION = Core.CALCULATOR_MODEL_VERSION || 'spherical-v1';
   const clone = value => JSON.parse(JSON.stringify(value));
   const normalizeHeading = value => { const parsed = Number(value); if (!Number.isFinite(parsed)) return value; return ((parsed % 360) + 360) % 360; };
@@ -150,7 +154,32 @@
       if (!usingPreview && cached && cached.cameraRevision === camera.revision && cached.targetRevision === target.revision && cached.calculatorModelVersion === CALCULATOR_MODEL_VERSION) return clone(cached);
       try { const observation = Core.computeObservation(camera, target); const entry = Core.buildObservationCacheEntry(camera, target, observation); if (!usingPreview) state.observationsByKey[key] = entry; return clone(entry); } catch (error) { const failed = {key, cameraId, targetId, cameraRevision: camera.revision, targetRevision: target.revision, calculatorModelVersion: CALCULATOR_MODEL_VERSION, generatedAt: new Date().toISOString(), calculationState: 'failed', visibilityState: 'unknown', error: error.message}; if (!usingPreview) state.observationsByKey[key] = failed; return clone(failed); }
     }
-    return {getState: publicState, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }, toCameraProject() { return clone(canonical(state)); }, isDirty, addCamera, addTarget, patchCamera(id, patch, label) { return patchEntity('camera', id, patch, label); }, patchTarget(id, patch, label) { return patchEntity('target', id, patch, label); }, patchSettings(patch, label) { return transaction(label || 'settings-patch', () => { Object.assign(state.settings, clone(patch)); }); }, removeCamera(id) { return removeEntity('camera', id); }, removeTarget(id) { return removeEntity('target', id); }, duplicateCamera(id) { return duplicateEntity('camera', id); }, duplicateTarget(id) { return duplicateEntity('target', id); }, selectCamera(id) { setSelection('camera', id); }, selectTarget(id) { setSelection('target', id); }, setFocusedEntity, clearFocusedEntity, setFocusMapMode, setInteractionMode, setPanelOpen, setActiveResultTab, setActiveWorkspaceTab, setFovColorMode, setObjectManagerTab, setInspectorTab, setTargetSearchQuery, setCameraSearchQuery, setSearchQuery: setTargetSearchQuery, beginPreview, cancelPreview, commitPreview, getCamera(id, includePreview) { const value = getEntity('camera', id, includePreview); return value && clone(value); }, getTarget(id, includePreview) { const value = getEntity('target', id, includePreview); return value && clone(value); }, getObservation, markSaved() { baseline = canonical(state); emit(); }, undo() { if (!historyIndex) return false; restore(history[--historyIndex].before); emit(); return true; }, redo() { if (historyIndex >= history.length) return false; restore(history[historyIndex++].after); emit(); return true; }};
+    function replaceProject(project) {
+      const checked = Project.validateProject(project);
+      if (!checked.ok) throw new Error(checked.error.message);
+      state = normalize(checked.value, idFactory);
+      preview = null;
+      history = [];
+      historyIndex = 0;
+      baseline = canonical(state);
+      emit();
+      return clone(baseline);
+    }
+    function renameProject(name) {
+      const value = typeof name === 'string' ? name.trim() : '';
+      if (!value) throw new Error('Project name 不可為空。');
+      return transaction('project-rename', () => { state.name = value; });
+    }
+    function markSaved(project) {
+      if (project !== undefined) {
+        const checked = Project.validateProject(project);
+        if (!checked.ok) throw new Error(checked.error.message);
+        state.map = checked.value.map ? clone(checked.value.map) : null;
+      }
+      baseline = canonical(state);
+      emit();
+    }
+    return {getState: publicState, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }, toCameraProject() { return clone(canonical(state)); }, isDirty, replaceProject, renameProject, addCamera, addTarget, patchCamera(id, patch, label) { return patchEntity('camera', id, patch, label); }, patchTarget(id, patch, label) { return patchEntity('target', id, patch, label); }, patchSettings(patch, label) { return transaction(label || 'settings-patch', () => { Object.assign(state.settings, clone(patch)); }); }, removeCamera(id) { return removeEntity('camera', id); }, removeTarget(id) { return removeEntity('target', id); }, duplicateCamera(id) { return duplicateEntity('camera', id); }, duplicateTarget(id) { return duplicateEntity('target', id); }, selectCamera(id) { setSelection('camera', id); }, selectTarget(id) { setSelection('target', id); }, setFocusedEntity, clearFocusedEntity, setFocusMapMode, setInteractionMode, setPanelOpen, setActiveResultTab, setActiveWorkspaceTab, setFovColorMode, setObjectManagerTab, setInspectorTab, setTargetSearchQuery, setCameraSearchQuery, setSearchQuery: setTargetSearchQuery, beginPreview, cancelPreview, commitPreview, getCamera(id, includePreview) { const value = getEntity('camera', id, includePreview); return value && clone(value); }, getTarget(id, includePreview) { const value = getEntity('target', id, includePreview); return value && clone(value); }, getObservation, markSaved, undo() { if (!historyIndex) return false; restore(history[--historyIndex].before); emit(); return true; }, redo() { if (historyIndex >= history.length) return false; restore(history[historyIndex++].after); emit(); return true; }};
   }
   return {createProjectStore};
 }));

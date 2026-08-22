@@ -12,11 +12,21 @@
   <div class="app-shell" id="appShell">
     <header class="top-bar">
       <div class="brand">
-      <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 5.3</span></div>
+      <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 5.4</span></div>
         <div class="brand-subtitle">Camera planning · spherical-v1 · Leaflet</div>
       </div>
       <div class="project-meta"><span class="project-name" id="projectName">Untitled project</span><span class="dirty-badge" id="dirtyState">Clean baseline</span></div>
       <div class="top-actions" aria-label="Project actions">
+        <div class="project-menu">
+          <button class="top-button" id="projectMenuToggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="projectMenu">Project</button>
+          <div class="project-menu-popover" id="projectMenu" role="menu" aria-label="Project menu" hidden>
+            <button type="button" role="menuitem" id="newProjectMenuItem">New Project</button>
+            <button type="button" role="menuitem" id="openProjectMenuItem">Open Project…</button>
+            <button type="button" role="menuitem" id="saveProjectMenuItem">Save Project As…</button>
+            <button type="button" role="menuitem" id="renameProjectMenuItem">Rename Project…</button>
+          </div>
+          <input id="projectOpenFile" type="file" accept="application/json,.json,.portcam.json" hidden />
+        </div>
         <button class="icon-button" id="undoButton" type="button" title="Undo" aria-label="Undo">↶</button>
         <button class="icon-button" id="redoButton" type="button" title="Redo" aria-label="Redo">↷</button>
         <div class="panel-control-group" role="group" aria-label="Panel controls">
@@ -126,10 +136,27 @@
         <div class="settings-dialog-footer"><button class="action-button" id="projectSettingsCancel" type="button">Cancel</button><button class="action-button primary" id="projectSaveDefaults" type="button">Save Defaults</button></div>
       </section>
     </div>
+
+    <div class="modal-backdrop project-action-backdrop" id="projectGuardModal" role="presentation" aria-hidden="true" hidden>
+      <section class="settings-dialog project-action-dialog" id="projectGuardDialog" role="dialog" aria-modal="true" aria-labelledby="projectGuardTitle" aria-describedby="projectGuardDescription">
+        <div class="panel-header settings-dialog-header"><div><h2 id="projectGuardTitle">Unsaved Project changes</h2><div class="subline" id="projectGuardDescription">Save this Project before continuing?</div></div></div>
+        <div class="settings-dialog-scroll"><p class="project-dialog-copy">目前 Project 有尚未儲存的變更。你可以先保存、捨棄變更，或取消目前操作。</p><div class="form-error" id="projectGuardError" role="alert"></div></div>
+        <div class="settings-dialog-footer"><button class="action-button" id="projectGuardCancel" type="button">Cancel</button><button class="action-button danger" id="projectGuardDiscard" type="button">Discard</button><button class="action-button primary" id="projectGuardSave" type="button">Save</button></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop project-action-backdrop" id="projectRenameModal" role="presentation" aria-hidden="true" hidden>
+      <section class="settings-dialog project-action-dialog" id="projectRenameDialog" role="dialog" aria-modal="true" aria-labelledby="projectRenameTitle" aria-describedby="projectRenameDescription">
+        <div class="panel-header settings-dialog-header"><div><h2 id="projectRenameTitle">Rename Project</h2><div class="subline" id="projectRenameDescription">Project name is saved in the Project history.</div></div><button class="panel-close" id="projectRenameClose" type="button" aria-label="關閉 Rename Project">×</button></div>
+        <div class="settings-dialog-scroll"><div class="field"><label class="field-label" for="projectRenameInput">Project name</label><input class="field-control" id="projectRenameInput" type="text" autocomplete="off" maxlength="160" /></div><div class="form-error" id="projectRenameError" role="alert"></div></div>
+        <div class="settings-dialog-footer"><button class="action-button" id="projectRenameCancel" type="button">Cancel</button><button class="action-button primary" id="projectRenameConfirm" type="button">Rename</button></div>
+      </section>
+    </div>
   </div>
 
 
   <script src="./portcam-core.js"></script>
+  <script src="./portcam-project.js"></script>
   <script src="./portcam-store.js"></script>
   <script src="./portcam-map.js"></script>
   <script src="./portcam-comparison.js"></script>

@@ -1,11 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {createProjectStore} = require('./portcam-store.js');
+const Project = require('./portcam-project.js');
 
 let sequence = 0;
 const ids = () => `id-${++sequence}`;
 const camera = (overrides = {}) => ({name:'A', position:{latitudeDeg:22.6082, longitudeDeg:120.2824}, heightM:20, headingDeg:0, tiltDownDeg:20, sensorWidthMm:7.2, sensorHeightMm:4.05, widthPx:2560, heightPx:1440, focalLengthMm:14, ...overrides});
-const target = (overrides = {}) => ({name:'T', position:{latitudeDeg:22.61, longitudeDeg:120.2824}, lengthM:8, widthM:2.5, heightM:3, ...overrides});
+const target = (overrides = {}) => ({name:'T', position:{latitudeDeg:22.61, longitudeDeg:120.2824}, lengthM:8, widthM:2.5, heightM:3, headingDeg:0, ...overrides});
 function store() { return createProjectStore({name:'Test', settings:{planningTargetHeightM:2}, cameras:[camera({id:'a'}),camera({id:'b', position:{latitudeDeg:22.6,longitudeDeg:120.28}})], targets:[target({id:'t1'}),target({id:'t2'})]}, {idFactory:ids}); }
 
 test('normalizes entities and exports only camera-project data', () => {
@@ -13,6 +14,32 @@ test('normalizes entities and exports only camera-project data', () => {
   assert.deepEqual(state.cameraOrder, ['a','b']); assert.equal(state.uiState.selectedCameraId, 'a');
   assert.equal(project.schemaVersion, 'camera-project/1.0'); assert.equal(project.cameras.length, 2);
   assert.equal(JSON.stringify(project).includes('observationsByKey'), false); assert.equal(JSON.stringify(project).includes('uiState'), false);
+});
+test('replaceProject atomically installs a clean project and resets runtime UI/cache state', () => {
+  const s = store(); s.getObservation('a', 't1'); s.patchCamera('a', {headingDeg: 12}); s.beginPreview('camera', 'a', {headingDeg: 20});
+  const project = Project.validateProject({
+    schemaVersion: 'camera-project/1.0', projectId: 'replacement', name: 'Opened', settings: {planningTargetHeightM: 2},
+    cameras: [camera({id: 'new-camera', name: 'New Camera'})], targets: [target({id: 'new-target', name: 'New Target'})],
+    map: Project.DEFAULT_MAP
+  });
+  assert.equal(project.ok, true);
+  s.setPanelOpen('workspace', true); s.setFocusMapMode(true); s.setCameraSearchQuery('stale'); s.setTargetSearchQuery('stale');
+  s.replaceProject(project.value);
+  const state = s.getState();
+  assert.equal(state.projectId, 'replacement'); assert.equal(state.name, 'Opened'); assert.equal(state.dirty, false);
+  assert.deepEqual(state.history, {index: 0, length: 0}); assert.equal(state.preview, null); assert.deepEqual(state.observationsByKey, {});
+  assert.equal(state.uiState.selectedCameraId, 'new-camera'); assert.equal(state.uiState.selectedTargetId, 'new-target');
+  assert.deepEqual(state.uiState.focusedEntity, {kind: 'camera', id: 'new-camera'});
+  assert.equal(state.uiState.interactionMode, 'navigate'); assert.equal(state.uiState.focusMapMode, false);
+  assert.equal(state.uiState.panelOpen.workspace, false); assert.equal(state.uiState.panelOpen.objectManager, true); assert.equal(state.uiState.panelOpen.inspector, true);
+  assert.equal(state.uiState.cameraSearchQuery, ''); assert.equal(state.uiState.targetSearchQuery, '');
+  assert.deepEqual(s.toCameraProject().map, Project.DEFAULT_MAP);
+});
+test('renameProject is one undoable transaction and markSaved can capture the map viewport without history', () => {
+  const s = store(); s.markSaved(); assert.equal(s.renameProject('Renamed'), true); assert.equal(s.getState().history.length, 1); assert.equal(s.isDirty(), true);
+  s.undo(); assert.equal(s.getState().name, 'Test'); s.redo(); assert.equal(s.getState().name, 'Renamed');
+  const project = Project.validateProject({...s.toCameraProject(), map: Project.DEFAULT_MAP}); assert.equal(project.ok, true);
+  s.markSaved(project.value); assert.equal(s.isDirty(), false); assert.deepEqual(s.getState().history, {index: 1, length: 1}); assert.deepEqual(s.toCameraProject().map, Project.DEFAULT_MAP);
 });
 test('camera and target selection remain independent, and deletion selects next then previous', () => {
   const s = store(); s.selectCamera('b'); s.selectTarget('t2'); s.removeCamera('b'); s.removeTarget('t2');

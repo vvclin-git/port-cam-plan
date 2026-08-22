@@ -7,11 +7,12 @@
     root.PortCamYoloCoverage || (typeof require === 'function' ? require('./portcam-yolo-coverage.js') : null),
     root.PortCamCameraDefaults || (typeof require === 'function' ? require('./portcam-camera-defaults.js') : null),
     root.PortCamCameraPresets || (typeof require === 'function' ? require('./portcam-camera-presets.js') : null),
-    root.PortCamCameraPresetTransfer || (typeof require === 'function' ? require('./portcam-camera-preset-transfer.js') : null)
+    root.PortCamCameraPresetTransfer || (typeof require === 'function' ? require('./portcam-camera-preset-transfer.js') : null),
+    root.PortCamProject || (typeof require === 'function' ? require('./portcam-project.js') : null)
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamUI = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer, Project) {
   'use strict';
   if (!Core) throw new Error('PortCamUI requires PortCamCore');
   if (!Comparison) throw new Error('PortCamUI requires PortCamComparison');
@@ -19,6 +20,7 @@
   if (!CameraDefaults) throw new Error('PortCamUI requires PortCamCameraDefaults');
   if (!CameraPresets) throw new Error('PortCamUI requires PortCamCameraPresets');
   if (!CameraPresetTransfer) throw new Error('PortCamUI requires PortCamCameraPresetTransfer');
+  if (!Project) throw new Error('PortCamUI requires PortCamProject');
 
   const CAMERA_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#a16207'];
   const TILE_PADDING = 1;
@@ -49,11 +51,17 @@
   function fmtDeg(value) { return Number.isFinite(value) ? `${value.toFixed(2)}°` : '—'; }
   function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[char])); }
   function cameraColor(camera, order) { return camera.color || CAMERA_COLORS[Math.max(0, order.indexOf(camera.id)) % CAMERA_COLORS.length]; }
+  function newProjectId() {
+    const cryptoObject = typeof globalThis !== 'undefined' ? globalThis.crypto : null;
+    if (cryptoObject && typeof cryptoObject.randomUUID === 'function') return `project-${cryptoObject.randomUUID()}`;
+    return `project-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
   function defaultProject(options) {
     const cameraDefaults = options?.cameraDefaults && CameraDefaults.validateDefaults(options.cameraDefaults).ok
       ? clone(options.cameraDefaults)
       : CameraDefaults.FACTORY_DEFAULTS;
     return {
+      projectId: options?.projectId || newProjectId(),
       name: 'Untitled project',
       settings: {planningTargetHeightM: 2, baseMapKey: 'osm', tileZoom: 18, surfaceVisible: true, coverageTargetDimension: 'short'},
       cameras: [{id: 'camera-a', name: 'Camera A', color: CAMERA_COLORS[0], position: {latitudeDeg: 22.6082, longitudeDeg: 120.2824}, ...cameraDefaults, headingDeg: DEFAULT_CAMERA.headingDeg}],
@@ -120,6 +128,14 @@
     let projectImportApplyDefaults = true;
     let projectImportRequest = 0;
     let projectSettingsRestoreFocus = null;
+    let projectMenuOpen = false;
+    let projectMenuRestoreFocus = null;
+    let projectGuardOpen = false;
+    let projectGuardRestoreFocus = null;
+    let projectGuardAction = null;
+    let projectRenameOpen = false;
+    let projectRenameRestoreFocus = null;
+    let projectOpenRequest = 0;
     const labelVisibility = {camera: true, target: true};
 
     const els = {
@@ -130,6 +146,9 @@
       resultTabs: null, workspace: $('bottomWorkspace'), workspaceContent: $('workspaceContent'), workspaceTabs: $('workspaceTabs'), workspaceSummary: $('workspaceSummary'),
       mapLegend: $('mapLegend'), mapWorkspace: rootElement.querySelector?.('.map-workspace'),
       projectName: $('projectName'), dirty: $('dirtyState'), undo: $('undoButton'), redo: $('redoButton'),
+      projectMenuToggle: $('projectMenuToggle'), projectMenu: $('projectMenu'), projectOpenFile: $('projectOpenFile'),
+      projectGuardModal: $('projectGuardModal'), projectGuardDialog: $('projectGuardDialog'), projectGuardError: $('projectGuardError'),
+      projectRenameModal: $('projectRenameModal'), projectRenameDialog: $('projectRenameDialog'), projectRenameInput: $('projectRenameInput'), projectRenameError: $('projectRenameError'),
       status: $('status'), mapError: $('mapError'), instruction: $('instructionBanner'), instructionText: $('instructionText'),
       mapSettingsPopover: $('mapSettingsPopover'), mapSettingsToggle: $('mapSettingsToggle'),
       baseMapSelect: $('baseMapSelect'), surfaceToggle: $('surfaceToggle'), surfaceState: $('surfaceState'), surfaceHelp: $('surfaceHelp'),
@@ -158,6 +177,251 @@
       element.value = value == null ? '' : String(value);
     }
     function setChecked(element, value) { if (element && doc.activeElement !== element) element.checked = Boolean(value); }
+    function focusableIn(element) {
+      return Array.from(element?.querySelectorAll?.('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') || [])
+        .filter(node => !node.hidden && node.offsetParent !== null);
+    }
+    function renderProjectMenu() {
+      if (els.projectMenu) els.projectMenu.hidden = !projectMenuOpen;
+      if (els.projectMenuToggle) els.projectMenuToggle.setAttribute('aria-expanded', projectMenuOpen ? 'true' : 'false');
+    }
+    function openProjectMenu() {
+      projectMenuRestoreFocus = doc.activeElement;
+      projectMenuOpen = true;
+      renderProjectMenu();
+      const first = els.projectMenu?.querySelector?.('[role="menuitem"]');
+      first?.focus?.({preventScroll: true});
+    }
+    function closeProjectMenu({restoreFocus = true} = {}) {
+      if (!projectMenuOpen) return;
+      projectMenuOpen = false;
+      renderProjectMenu();
+      const focus = projectMenuRestoreFocus;
+      projectMenuRestoreFocus = null;
+      if (restoreFocus && focus?.isConnected && typeof focus.focus === 'function') focus.focus({preventScroll: true});
+    }
+    function openProjectGuard(action, restoreFocus) {
+      projectGuardRestoreFocus = restoreFocus || doc.activeElement;
+      projectGuardAction = action;
+      projectGuardOpen = true;
+      if (els.projectGuardError) els.projectGuardError.textContent = '';
+      if (els.projectGuardModal) {
+        els.projectGuardModal.hidden = false;
+        els.projectGuardModal.setAttribute('aria-hidden', 'false');
+      }
+      const first = els.projectGuardDialog?.querySelector?.('#projectGuardSave') || els.projectGuardDialog?.querySelector?.('button:not([disabled])');
+      first?.focus?.({preventScroll: true});
+    }
+    function closeProjectGuard({restoreFocus = true} = {}) {
+      if (!projectGuardOpen) return;
+      projectGuardOpen = false;
+      projectGuardAction = null;
+      if (els.projectGuardModal) {
+        els.projectGuardModal.hidden = true;
+        els.projectGuardModal.setAttribute('aria-hidden', 'true');
+      }
+      const focus = projectGuardRestoreFocus;
+      projectGuardRestoreFocus = null;
+      if (restoreFocus && focus?.isConnected && typeof focus.focus === 'function') focus.focus({preventScroll: true});
+    }
+    function openProjectRename() {
+      projectRenameRestoreFocus = doc.activeElement;
+      projectRenameOpen = true;
+      if (els.projectRenameInput) els.projectRenameInput.value = store.getState().name || 'Untitled project';
+      if (els.projectRenameError) els.projectRenameError.textContent = '';
+      if (els.projectRenameModal) {
+        els.projectRenameModal.hidden = false;
+        els.projectRenameModal.setAttribute('aria-hidden', 'false');
+      }
+      const focus = () => { els.projectRenameInput?.focus?.({preventScroll: true}); els.projectRenameInput?.select?.(); };
+      (view.requestAnimationFrame || (callback => view.setTimeout(callback, 0)))(focus);
+    }
+    function closeProjectRename({restoreFocus = true} = {}) {
+      if (!projectRenameOpen) return;
+      projectRenameOpen = false;
+      if (els.projectRenameModal) {
+        els.projectRenameModal.hidden = true;
+        els.projectRenameModal.setAttribute('aria-hidden', 'true');
+      }
+      const focus = projectRenameRestoreFocus;
+      projectRenameRestoreFocus = null;
+      if (restoreFocus && focus?.isConnected && typeof focus.focus === 'function') focus.focus({preventScroll: true});
+    }
+    function sanitizeProjectFilename(name) {
+      const cleaned = String(name || 'Untitled project').trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/g, '');
+      return `${cleaned || 'Untitled project'}.portcam.json`;
+    }
+    function currentMapViewport() {
+      const viewport = mapController?.getViewport?.();
+      if (viewport) return viewport;
+      const center = map?.getCenter?.();
+      const zoom = map?.getZoom?.();
+      if (center && Number.isFinite(Number(zoom))) return {center: {latitudeDeg: Number(center.lat), longitudeDeg: Number(center.lng)}, zoom: Number(zoom)};
+      return Project.DEFAULT_MAP;
+    }
+    function setMapViewport(viewport) {
+      if (mapController?.setViewport?.(viewport)) return true;
+      if (!map?.setView || !viewport) return false;
+      map.setView([viewport.center.latitudeDeg, viewport.center.longitudeDeg], viewport.zoom, {animate: false});
+      return true;
+    }
+    function fitProjectObjects(project) {
+      const points = [...(project.cameras || []), ...(project.targets || [])].map(entity => entity.position).filter(Boolean).map(position => [position.latitudeDeg, position.longitudeDeg]);
+      if (points.length && map?.fitBounds) {
+        map.fitBounds(points.length === 1 ? [points[0], points[0]] : points, {padding: [48, 48], maxZoom: 15});
+        return true;
+      }
+      return setMapViewport(Project.DEFAULT_MAP);
+    }
+    function applyProjectMap(project) {
+      if (project.map) return setMapViewport(project.map);
+      return fitProjectObjects(project);
+    }
+    function projectForSave() {
+      store.cancelPreview();
+      const candidate = Project.withMap(store.toCameraProject(), currentMapViewport());
+      const checked = Project.validateProject(candidate);
+      if (!checked.ok) throw new Error(checked.error.message);
+      return checked.value;
+    }
+    function downloadProject(project, filename) {
+      if (!view.Blob || !view.URL?.createObjectURL) throw new Error('瀏覽器不支援下載檔案。');
+      const blob = new view.Blob([JSON.stringify(project, null, 2)], {type: 'application/json'});
+      const url = view.URL.createObjectURL(blob);
+      const anchor = doc.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.style.display = 'none';
+      doc.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      view.setTimeout?.(() => view.URL.revokeObjectURL(url), 0);
+    }
+    async function saveProjectFile() {
+      let project;
+      try { project = projectForSave(); }
+      catch (error) { setStatus(`Project 儲存失敗：${error.message || error}`); return false; }
+      const filename = sanitizeProjectFilename(project.name);
+      const hasNativePicker = typeof view.showSaveFilePicker === 'function';
+      if (hasNativePicker) {
+        try {
+          const handle = await view.showSaveFilePicker({suggestedName: filename, types: [{description: 'PortCam Project', accept: {'application/json': ['.portcam.json', '.json']}}]});
+          const writable = await handle.createWritable();
+          await writable.write(JSON.stringify(project, null, 2));
+          await writable.close();
+          store.markSaved(project);
+          setStatus(`Project 已儲存：${filename}。`);
+          return true;
+        } catch (error) {
+          if (error?.name === 'AbortError') setStatus('已取消 Project 儲存；目前 Project 仍未儲存。');
+          else setStatus(`Project 儲存失敗：${error.message || error} 原本 Project 已保留。`);
+          return false;
+        }
+      }
+      try {
+        downloadProject(project, filename);
+        store.markSaved(project);
+        setStatus(`下載已啟動：${filename}。`);
+        return true;
+      } catch (error) {
+        setStatus(`Project 下載失敗：${error.message || error} 原本 Project 已保留。`);
+        return false;
+      }
+    }
+    function applyOpenedProject(project) {
+      try {
+        cancelPlacementInteraction();
+        store.replaceProject(project);
+        applyProjectMap(project);
+        setStatus(`已開啟 Project「${project.name}」。`);
+        return true;
+      } catch (error) {
+        setStatus(`Project 開啟失敗：${error.message || error} 目前 Project 已保留。`);
+        return false;
+      }
+    }
+    function requestProjectChange(action) {
+      closeProjectMenu({restoreFocus: false});
+      if (!store.isDirty()) return Promise.resolve(action());
+      openProjectGuard(action, els.projectMenuToggle);
+      return Promise.resolve(false);
+    }
+    function createNewProject() {
+      const raw = defaultProject({cameraDefaults: cameraDefaultsRepository.getDefaults(), projectId: newProjectId()});
+      const project = Project.validateProject(Project.withMap(raw, Project.DEFAULT_MAP));
+      if (!project.ok) { setStatus(`New Project 失敗：${project.error.message}`); return false; }
+      cancelPlacementInteraction();
+      store.replaceProject(project.value);
+      setMapViewport(project.value.map);
+      setStatus('已建立新的 Untitled project。');
+      return true;
+    }
+    async function continueAfterGuardSave() {
+      const action = projectGuardAction;
+      if (!action) return;
+      const saved = await saveProjectFile();
+      if (!saved) {
+        if (els.projectGuardError) els.projectGuardError.textContent = els.status?.textContent || 'Save 失敗；目前 Project 已保留。';
+        return;
+      }
+      closeProjectGuard({restoreFocus: false});
+      await action();
+    }
+    function discardAndContinueProjectChange() {
+      const action = projectGuardAction;
+      closeProjectGuard({restoreFocus: false});
+      if (action) Promise.resolve(action());
+    }
+    async function handleProjectFile(file) {
+      const request = ++projectOpenRequest;
+      if (!file) return;
+      let project;
+      try {
+        project = JSON.parse(await file.text());
+      } catch (error) {
+        setStatus(`Project 開啟失敗：檔案不是有效 JSON。${error.message || ''}`);
+        return;
+      }
+      if (request !== projectOpenRequest) return;
+      const checked = Project.validateProject(project);
+      if (!checked.ok) {
+        setStatus(`Project 開啟失敗：${checked.error.message} 目前 Project 已保留。`);
+        return;
+      }
+      requestProjectChange(() => applyOpenedProject(checked.value));
+    }
+    async function chooseProjectFile() {
+      closeProjectMenu({restoreFocus: false});
+      if (typeof view.showOpenFilePicker === 'function') {
+        try {
+          const handles = await view.showOpenFilePicker({multiple: false, types: [{description: 'PortCam Project', accept: {'application/json': ['.portcam.json', '.json']}}]});
+          if (handles?.[0]) await handleProjectFile(await handles[0].getFile());
+        } catch (error) {
+          if (error?.name === 'AbortError') setStatus('已取消開啟 Project。');
+          else setStatus(`Project 開啟失敗：${error.message || error} 目前 Project 已保留。`);
+        }
+        return;
+      }
+      if (els.projectOpenFile) { els.projectOpenFile.value = ''; els.projectOpenFile.click(); }
+    }
+    function renameProjectFromDialog() {
+      const value = String(els.projectRenameInput?.value || '').trim();
+      if (!value) { if (els.projectRenameError) els.projectRenameError.textContent = 'Project name 不可為空。'; return false; }
+      try {
+        const changed = store.renameProject(value);
+        closeProjectRename();
+        setStatus(changed ? `Project 已重新命名為「${value}」。` : 'Project name 未變更。');
+        return true;
+      } catch (error) {
+        if (els.projectRenameError) els.projectRenameError.textContent = error.message || String(error);
+        return false;
+      }
+    }
+    function onBeforeUnload(event) {
+      if (!store.isDirty()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    }
     const projectSettingsFieldMap = {
       projectCameraHeight: 'heightM', projectCameraTilt: 'tiltDownDeg', projectSensorW: 'sensorWidthMm', projectSensorH: 'sensorHeightMm',
       projectResW: 'widthPx', projectResH: 'heightPx', projectFocal: 'focalLengthMm'
@@ -606,6 +870,7 @@
       if (els.dirty) { els.dirty.textContent = state.dirty ? '尚未儲存的變更' : 'Clean baseline'; els.dirty.classList.toggle('is-dirty', state.dirty); }
       if (els.undo) els.undo.disabled = !state.history || state.history.index <= 0;
       if (els.redo) els.redo.disabled = !state.history || state.history.index >= state.history.length;
+      renderProjectMenu();
     }
 
     function renderRail(state) {
@@ -1248,6 +1513,19 @@
     function activateComparisonCamera(id) { activateWorkspaceCamera(id, 'comparison', '.comparison-camera-button'); }
     function activateYoloCoverageCamera(id) { activateWorkspaceCamera(id, 'yolo', '.yolo-camera-button'); }
     function onShellClick(event) {
+      if (event.target.closest?.('#projectMenuToggle')) { if (projectMenuOpen) closeProjectMenu(); else openProjectMenu(); return; }
+      if (event.target.closest?.('#newProjectMenuItem')) { requestProjectChange(createNewProject); return; }
+      if (event.target.closest?.('#openProjectMenuItem')) { chooseProjectFile(); return; }
+      if (event.target.closest?.('#saveProjectMenuItem')) { closeProjectMenu({restoreFocus: false}); saveProjectFile(); return; }
+      if (event.target.closest?.('#renameProjectMenuItem')) { closeProjectMenu({restoreFocus: false}); openProjectRename(); return; }
+      if (event.target === els.projectGuardModal) { closeProjectGuard(); return; }
+      if (event.target.closest?.('#projectGuardSave')) { continueAfterGuardSave(); return; }
+      if (event.target.closest?.('#projectGuardDiscard')) { discardAndContinueProjectChange(); return; }
+      if (event.target.closest?.('#projectGuardCancel')) { closeProjectGuard(); return; }
+      if (event.target === els.projectRenameModal) { closeProjectRename(); return; }
+      if (event.target.closest?.('#projectRenameClose')) { closeProjectRename(); return; }
+      if (event.target.closest?.('#projectRenameConfirm')) { renameProjectFromDialog(); return; }
+      if (event.target.closest?.('#projectRenameCancel')) { closeProjectRename(); return; }
       if (event.target.closest?.('#toggleObjectManager')) { togglePanel('objectManager'); return; }
       if (event.target.closest?.('#openInspector')) { togglePanel('inspector'); return; }
       if (event.target.closest?.('#focusMapButton')) { toggleFocusMap(); return; }
@@ -1272,7 +1550,7 @@
       if (event.target.closest?.('#mapSettingsToggle')) { setPanel('mapSettings', !(store.getState().uiState.panelOpen.mapSettings)); return; }
       if (event.target.closest?.('#closeMapSettings')) { setPanel('mapSettings', false); return; }
     }
-    function onGlobalClick(event) { if (overflowMenu && !event.target.closest?.('.manager-overflow-menu, [data-entity-overflow]')) closeOverflowMenu(); if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
+    function onGlobalClick(event) { if (overflowMenu && !event.target.closest?.('.manager-overflow-menu, [data-entity-overflow]')) closeOverflowMenu(); if (projectMenuOpen && !event.target.closest?.('.project-menu')) closeProjectMenu({restoreFocus: false}); if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
     function onProjectSettingsClick(event) {
       if (event.target === els.projectSettingsModal) return closeProjectSettings();
       const button = event.target.closest?.('button');
@@ -1313,6 +1591,47 @@
         }
         return;
       }
+      if (projectGuardOpen) {
+        if (event.key === 'Escape') { event.preventDefault(); closeProjectGuard(); return; }
+        if (event.key === 'Tab') {
+          const focusable = focusableIn(els.projectGuardDialog);
+          if (!focusable.length) { event.preventDefault(); return; }
+          const current = focusable.indexOf(doc.activeElement);
+          const next = event.shiftKey ? (current <= 0 ? focusable.length - 1 : current - 1) : (current === focusable.length - 1 ? 0 : current + 1);
+          event.preventDefault(); focusable[next].focus();
+        }
+        return;
+      }
+      if (projectRenameOpen) {
+        if (event.key === 'Escape') { event.preventDefault(); closeProjectRename(); return; }
+        if (event.key === 'Enter' && doc.activeElement === els.projectRenameInput) { event.preventDefault(); renameProjectFromDialog(); return; }
+        if (event.key === 'Tab') {
+          const focusable = focusableIn(els.projectRenameDialog);
+          if (!focusable.length) { event.preventDefault(); return; }
+          const current = focusable.indexOf(doc.activeElement);
+          const next = event.shiftKey ? (current <= 0 ? focusable.length - 1 : current - 1) : (current === focusable.length - 1 ? 0 : current + 1);
+          event.preventDefault(); focusable[next].focus();
+        }
+        return;
+      }
+      if (projectMenuOpen) {
+        if (event.key === 'Escape') { event.preventDefault(); closeProjectMenu(); return; }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          const items = Array.from(els.projectMenu?.querySelectorAll?.('[role="menuitem"]') || []);
+          if (items.length) {
+            const current = Math.max(0, items.indexOf(doc.activeElement));
+            const offset = event.key === 'ArrowDown' ? 1 : -1;
+            items[(current + offset + items.length) % items.length].focus();
+            event.preventDefault();
+          }
+        }
+        return;
+      }
+      if ((event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') && doc.activeElement === els.projectMenuToggle) {
+        event.preventDefault();
+        openProjectMenu();
+        return;
+      }
       if (event.key !== 'Escape') return;
       if (legendDrag && cancelLegendDrag()) { event.preventDefault(); event.stopPropagation(); return; }
       if (headingDrag && finishHeadingDrag(false)) { event.preventDefault(); event.stopPropagation(); return; }
@@ -1328,7 +1647,7 @@
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraRailItems, 'scroll', () => closeOverflowMenu()); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
     listen(els.mapLegend, 'pointerdown', onLegendPointerDown); listen(els.mapLegend, 'pointermove', onLegendPointerMove); listen(els.mapLegend, 'pointerup', onLegendPointerUp); listen(els.mapLegend, 'pointercancel', onLegendPointerUp); listen(els.mapLegend, 'click', onLegendClick); listen(els.mapLegend, 'keydown', onLegendKeydown);
     listen(els.headingScrubber, 'pointerdown', onHeadingPointerDown); listen(els.headingScrubber, 'pointermove', onHeadingPointerMove); listen(els.headingScrubber, 'pointerup', onHeadingPointerUp); listen(els.headingScrubber, 'pointercancel', onHeadingPointerUp); listen(els.headingScrubber, 'keydown', onHeadingKeydown);
-    listen(els.inspector, 'click', onInspectorClick); listen(els.projectSettingsModal, 'click', onProjectSettingsClick); listen(els.projectPresetImportFile, 'change', event => handleProjectImportFile(event.target.files?.[0] || null)); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
+    listen(els.inspector, 'click', onInspectorClick); listen(els.projectSettingsModal, 'click', onProjectSettingsClick); listen(els.projectPresetImportFile, 'change', event => handleProjectImportFile(event.target.files?.[0] || null)); listen(els.projectOpenFile, 'change', event => handleProjectFile(event.target.files?.[0] || null)); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter); listen(view, 'beforeunload', onBeforeUnload);
     listen($('addCamera'), 'click', beginCameraPlacement);
     listen($('addTargetManager'), 'click', () => { setInteractionMode('place-target'); });
     listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo());
@@ -1338,7 +1657,7 @@
     render(store.getState());
     scheduleInvalidate();
 
-    const publicApi = {store, mapController, cameraDefaultsRepository, cameraPresetsRepository, cameraPresetCoordinator, render, openProjectSettings, closeProjectSettings, destroy() { if (destroyed) return; destroyed = true; pendingCameraPlacement = null; cameraPlacementDefaultsSnapshot = null; closeProjectSettings({restoreFocus: false}); finishLegendDrag(); closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); if (legendClampFrame != null && view.cancelAnimationFrame) view.cancelAnimationFrame(legendClampFrame); legendClampFrame = null; mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
+    const publicApi = {store, mapController, cameraDefaultsRepository, cameraPresetsRepository, cameraPresetCoordinator, render, openProjectSettings, closeProjectSettings, saveProjectFile, chooseProjectFile, createNewProject, openProjectRename, applyOpenedProject, destroy() { if (destroyed) return; destroyed = true; pendingCameraPlacement = null; cameraPlacementDefaultsSnapshot = null; closeProjectSettings({restoreFocus: false}); closeProjectGuard({restoreFocus: false}); closeProjectRename({restoreFocus: false}); closeProjectMenu({restoreFocus: false}); finishLegendDrag(); closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); if (legendClampFrame != null && view.cancelAnimationFrame) view.cancelAnimationFrame(legendClampFrame); legendClampFrame = null; mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
     const testWindow = view || root; testWindow.projectStoreForTest = store; testWindow.mapControllerForTest = mapController; testWindow.cameraSceneExportForTest = {buildCameraScene: publicApi.buildCameraScene, serializeCameraScene: publicApi.serializeCameraScene}; testWindow.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry}; testWindow.cameraMarkerForTest = {getLatLng() { const id = selectedCameraId(); const snapshot = id && mapController.getCameraLayerSnapshot(id); return snapshot?.markerPosition && L?.latLng ? L.latLng(snapshot.markerPosition.lat, snapshot.markerPosition.lng) : snapshot?.markerPosition || null; }};
     return publicApi;
   }

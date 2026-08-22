@@ -3,7 +3,7 @@
 ## Status
 
 - Phase 5.2 is committed on `codex/multi-cam` as `97c45d9` (`Add Phase 5.2 camera preset library`).
-- It is based on the committed Phase 5.1 closeout fix `2dfb027` (`Add Phase 5.1 project camera defaults settings`). Phase 5.3 Camera Preset Library transfer changes are separate and currently live in the working tree; neither earlier commit is rewritten or replaced.
+- It is based on the committed Phase 5.1 closeout fix `2dfb027` (`Add Phase 5.1 project camera defaults settings`). Phase 5.3 Camera Preset Library transfer was subsequently committed as `5c6a8ad`; Phase 5.4 Project New/Open/Save changes are separate and currently live in the working tree. Neither earlier commit is rewritten or replaced.
 - This phase does not modify `camera-project/1.0`, `camera-scene/1.1`, Store persistence, FOV/YOLO formulas, Observation caching, or the Python consumer.
 
 ## Preset repository contract
