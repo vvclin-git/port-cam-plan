@@ -3,7 +3,7 @@
 ## Status
 
 - Phase 4.4 is implemented in the committed history on `codex/multi-cam`; the live checkout was verified at `6d85dc2` (`Document Phase 4.4 controls and current implementation status`) before Phase 5.1 work began.
-- The previous `29b753e`/uncommitted documentation note was stale: the checkout was clean at that verified Phase 4.4 `HEAD`. Phase 5.1 was subsequently committed as `2dfb027`; Phase 5.2 Camera Preset Library changes are intentionally tracked in the current working tree and are documented separately in [`PHASE_5_2_HANDOFF.md`](PHASE_5_2_HANDOFF.md).
+- The previous `29b753e`/uncommitted documentation note was stale: the checkout was clean at that verified Phase 4.4 `HEAD`. Phase 5.1 was subsequently committed as `2dfb027`, Phase 5.2 as `97c45d9`, and Phase 5.3 Camera Preset Library transfer changes are intentionally tracked in the current working tree and are documented separately in [`PHASE_5_3_HANDOFF.md`](PHASE_5_3_HANDOFF.md).
 - Project/Scene schemas, Observation cache, spherical-v1 calculations, coverage formula, and public Map/Store contracts remain unchanged.
 
 ## Panel and Focus map contract

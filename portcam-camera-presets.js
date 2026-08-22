@@ -162,6 +162,13 @@
       if (!custom.some(preset => preset.id === id)) return fail('找不到指定 Preset。', 'not-found', snapshot());
       return persist(custom.filter(preset => preset.id !== id));
     }
+    function replacePresets(nextPresets) {
+      read();
+      if (!Array.isArray(nextPresets)) return fail('Preset 清單格式無效。', 'invalid-list', snapshot());
+      const checked = validatePayload({schemaVersion: SCHEMA_VERSION, presets: nextPresets});
+      if (!checked.ok) return fail(checked.error, checked.code, snapshot());
+      return persist(checked.value);
+    }
     return {
       schemaVersion: SCHEMA_VERSION,
       storageKey,
@@ -182,7 +189,9 @@
       duplicatePreset,
       remove: deletePreset,
       delete: deletePreset,
-      deletePreset
+      deletePreset,
+      replacePresets,
+      replaceCustomPresets: replacePresets
     };
   }
 

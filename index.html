@@ -12,7 +12,7 @@
   <div class="app-shell" id="appShell">
     <header class="top-bar">
       <div class="brand">
-      <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 5.2</span></div>
+      <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 5.3</span></div>
         <div class="brand-subtitle">Camera planning · spherical-v1 · Leaflet</div>
       </div>
       <div class="project-meta"><span class="project-name" id="projectName">Untitled project</span><span class="dirty-badge" id="dirtyState">Clean baseline</span></div>
@@ -113,7 +113,7 @@
                 <section class="panel-section"><div class="field"><label class="field-label" for="projectResolutionPreset">Resolution</label><select class="field-control" id="projectResolutionPreset"><option value="640x480">VGA — 640 × 480</option><option value="1280x720">720p — 1280 × 720</option><option value="1920x1080">1080p — 1920 × 1080</option><option value="2304x1296">3MP — 2304 × 1296</option><option value="2560x1440">1440p — 2560 × 1440</option><option value="2880x1620">5MP — 2880 × 1620</option><option value="3840x2160">4K — 3840 × 2160</option><option value="4096x2160">DCI 4K — 4096 × 2160</option><option value="custom">Custom</option></select></div><div class="field-grid"><div class="field"><label class="field-label" for="projectResW">Image width</label><input class="field-control" id="projectResW" type="number" min="1" /></div><div class="field"><label class="field-label" for="projectResH">Image height</label><input class="field-control" id="projectResH" type="number" min="1" /></div></div></section>
                 <section class="panel-section"><div class="field"><label class="field-label" for="projectFocal">Focal length</label><div class="input-suffix"><input class="field-control" id="projectFocal" type="number" step="0.1" min="0" /><span>mm</span></div></div></section>
                 <div class="settings-dialog-actions"><button class="action-button" id="projectUseSelectedCamera" type="button">Use Selected Camera</button><button class="action-button" id="projectRestoreFactory" type="button">Restore Factory Defaults</button></div>
-                <section class="panel-section preset-library-section"><div class="field"><label class="field-label" for="projectPresetSelect">Preset Library</label><select class="field-control" id="projectPresetSelect"><option value="factory-defaults">Factory Defaults · built-in</option></select></div><div class="settings-preset-actions"><button class="action-button" id="projectPresetLoad" type="button">Load into Form</button><button class="action-button" id="projectPresetSetDefault" type="button">Set as Default</button><button class="action-button" id="projectPresetCreateFromForm" type="button">New from Form</button><button class="action-button" id="projectPresetCreateFromCamera" type="button">New from Selected Camera</button><button class="action-button" id="projectPresetUpdate" type="button" disabled>Update Selected Preset</button><button class="action-button" id="projectPresetRename" type="button" disabled>Rename</button><button class="action-button" id="projectPresetDuplicate" type="button">Duplicate</button><button class="action-button danger" id="projectPresetDelete" type="button" disabled>Delete</button></div></section>
+                <section class="panel-section preset-library-section"><div class="field"><label class="field-label" for="projectPresetSelect">Preset Library</label><select class="field-control" id="projectPresetSelect"><option value="factory-defaults">Factory Defaults · built-in</option></select></div><div class="settings-preset-actions"><button class="action-button" id="projectPresetLoad" type="button">Load into Form</button><button class="action-button" id="projectPresetSetDefault" type="button">Set as Default</button><button class="action-button" id="projectPresetCreateFromForm" type="button">New from Form</button><button class="action-button" id="projectPresetCreateFromCamera" type="button">New from Selected Camera</button><button class="action-button" id="projectPresetUpdate" type="button" disabled>Update Selected Preset</button><button class="action-button" id="projectPresetRename" type="button" disabled>Rename</button><button class="action-button" id="projectPresetDuplicate" type="button">Duplicate</button><button class="action-button danger" id="projectPresetDelete" type="button" disabled>Delete</button></div><div class="preset-transfer-actions"><button class="action-button" id="projectPresetExport" type="button">Export Library</button><button class="action-button" id="projectPresetImport" type="button">Import Library</button><input id="projectPresetImportFile" type="file" accept="application/json,.json" hidden /></div><section class="preset-import-panel" id="projectPresetImportPanel" hidden aria-labelledby="projectPresetImportTitle"><h4 id="projectPresetImportTitle">Import Library</h4><div class="tiny" id="projectPresetImportFileName"></div><div class="preset-import-summary" id="projectPresetImportSummary"></div><fieldset class="preset-import-options"><legend>Import options</legend><label><input type="radio" name="projectPresetImportMode" id="projectPresetImportMerge" value="merge" checked /> Merge</label><label><input type="radio" name="projectPresetImportMode" id="projectPresetImportReplace" value="replace" /> Replace Library</label><label><input type="checkbox" id="projectPresetImportDefaults" checked /> Apply imported Camera Defaults</label></fieldset><div class="settings-preset-actions"><button class="action-button" id="projectPresetImportApply" type="button" disabled>Apply Import</button><button class="action-button" id="projectPresetImportCancel" type="button">Cancel Import</button></div><div class="error-text" id="projectPresetImportError" role="alert"></div></section></section>
               </div>
             </section>
             <section class="settings-accordion-item">
@@ -136,6 +136,7 @@
   <script src="./portcam-yolo-coverage.js"></script>
   <script src="./portcam-camera-defaults.js"></script>
   <script src="./portcam-camera-presets.js"></script>
+  <script src="./portcam-camera-preset-transfer.js"></script>
   <script src="./leaflet/leaflet.js"></script>
   <script src="./portcam-ui.js"></script>
   <script>
@@ -148,9 +149,10 @@
       try { storage = window.localStorage; } catch (error) { storage = {getItem() { throw error; }, setItem() { throw error; }}; }
       const cameraDefaultsRepository = window.PortCamCameraDefaults.createRepository({storage});
       const cameraPresetsRepository = window.PortCamCameraPresets.createRepository({storage});
+      const cameraPresetCoordinator = window.PortCamCameraPresetTransfer.createCoordinator({cameraDefaultsRepository, cameraPresetsRepository});
       const loadedDefaults = cameraDefaultsRepository.read();
       const store = window.PortCamStore.createProjectStore(window.PortCamUI.defaultProject({cameraDefaults: loadedDefaults.defaults}));
-      const controller = window.PortCamUI.createAppController({store, map, leaflet: L, root: document.getElementById('appShell'), cameraDefaultsRepository, cameraPresetsRepository});
+      const controller = window.PortCamUI.createAppController({store, map, leaflet: L, root: document.getElementById('appShell'), cameraDefaultsRepository, cameraPresetsRepository, cameraPresetCoordinator});
       window.mapForTest = map;
       window.appControllerForTest = controller;
     })();
