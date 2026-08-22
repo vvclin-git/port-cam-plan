@@ -2,9 +2,9 @@
 
 ## Status and boundaries
 
-- Status: implemented locally on 2026-08-16.
+- Status: historical Phase 3.1 handoff, later incorporated into the committed Phase 3.2 and Phase 4 implementation. See [`PHASE_4_4_HANDOFF.md`](PHASE_4_4_HANDOFF.md) for the current UI projection and panel state.
 - Scope: shared Camera／Target entity management, MapController interaction repairs, wheel policy, labels／panes, and the Bottom Workspace Targets tab.
-- No commit, push, import／save workflow, or remote mutation was performed.
+- The original Phase 3.1 work was recorded before commit; current repository history contains the follow-up implementation through `29b753e`.
 - Existing `camera-project/1.0`, `camera-scene/1.1`, `spherical-v1`, Surface semantics, and ray-casting contracts are unchanged.
 - Phase 4 still owns Camera Comparison, YOLO Coverage analysis, Project Import／Save, 3D Target boxes, exact ray projection, DEM, and EPSG:3826.
 
@@ -32,9 +32,9 @@
 
 ## Target List
 
-The Targets tab lives in Bottom Workspace and is separate from Camera Rail while using the same Store semantics. It displays name, coordinates, visible／enabled／locked state, selected state, and Observation status for the selected Camera. It supports Search, row selection, Rename, Visible, Enabled, Locked, Duplicate, Delete, and Fit Target.
+The original Phase 3.1 Targets tab lived in Bottom Workspace and was separate from Camera Rail. It was later consolidated into Object Manager's Cameras／Targets tabs; the current UI retains the same Store semantics and supports name, coordinates, visible／enabled／locked state, focus, Search, row selection, Rename, Duplicate, Delete, and Fit Target.
 
-- Row selection selects only the Target, preserves Camera selection, opens the Result Drawer, and selects the same map marker.
+- Row selection selects only the Target, preserves Active Camera, focuses the same map marker, and opens Inspector Details／Observation as appropriate.
 - Marker selection selects and scrolls the matching row into view.
 - Duplicate uses a fresh ID, `<name> copy`, copied placement／size, `locked:false`, and selects the new Target.
 - Delete uses the Store next／previous fallback. Undo／Redo restores selection, marker, label, row, and observation state.

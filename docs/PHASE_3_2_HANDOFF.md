@@ -1,5 +1,7 @@
 # Phase 3.2 Handoff
 
+> This is a historical Phase 3.2 handoff. The current committed repository is `29b753e`; Phase 4.1–4.4 supersede the old placeholder and uncommitted-work wording below. See [`PHASE_4_4_HANDOFF.md`](PHASE_4_4_HANDOFF.md) for the current panel, focus, FOV, placement, and heading behavior.
+
 ## Phase 3.3 independent analysis context — 2026-08-18
 
 - Camera selection is now expressed as Active Camera and Target selection as Current Target. They remain independent object selections; Observation is a runtime calculation of the Current Target observed by the Active Camera, not a saved or permanent pair.
@@ -32,11 +34,11 @@
 
 ## Delivered scope
 
-Phase 3.2 was implemented on the existing uncommitted Phase 3.1 worktree. No reset, commit, push, release, schema migration, import/save workflow, or remote mutation was performed.
+Phase 3.2 was initially implemented on the existing uncommitted Phase 3.1 worktree. It was subsequently incorporated into the committed branch; this historical handoff does not imply that the current Phase 4 implementation remains uncommitted.
 
 - Left-side Object Manager replaces the Camera Rail and Bottom Workspace Targets view. Cameras and Targets use one row renderer with tab, search, focus, selection, visible, enabled, locked, Fit, duplicate, and delete operations.
 - Right-side Context Inspector replaces the visible Camera Inspector/Result Drawer split. Details follows `focusedEntity`; Observation calculates the Current Target with the independent Active Camera selection.
-- Bottom Workspace retains only Camera Comparison and YOLO Coverage placeholders.
+- Bottom Workspace retained Camera Comparison and YOLO Coverage placeholders at the Phase 3.2 boundary; Phase 4.1／4.2 later implemented both derived analysis surfaces.
 - MapController was retained: shared marker drag, labels, panes, non-interactive geometry, Target-in-FOV click behavior, and wheel controller are unchanged.
 - Fixed a Target-only drag regression: preview no longer replaces the active `L.divIcon`; icon replacement is limited to selected/locked/enabled style changes, preserving Leaflet pointer capture throughout the drag.
 

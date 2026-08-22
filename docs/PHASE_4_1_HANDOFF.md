@@ -1,5 +1,7 @@
 # Phase 4.1 Handoff — Camera Comparison
 
+> Historical Phase 4.1 handoff. Camera Comparison was delivered in the Phase 4.1/4.2 implementation commit `379f94f`; the current repository continues with the Phase 4.2 FOV bugfix and Phase 4.3–4.4 UI controls documented in the linked follow-up handoffs.
+
 ## Status and scope
 
 - Scope delivered: Camera Comparison only.

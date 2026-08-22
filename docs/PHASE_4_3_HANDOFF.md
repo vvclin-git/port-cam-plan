@@ -2,9 +2,9 @@
 
 ## Status
 
-- Phase 4.3 is implemented locally from clean baseline `8253133` on branch `codex/multi-cam`.
+- Phase 4.3 is committed as `fc9566a` (`Add two-stage camera placement and map-level FOV control`) on branch `codex/multi-cam`; Phase 4.4 is the follow-up commit `29b753e`.
 - Phase 4.4 extends this handoff from clean commit `fc9566a`: Objects／Inspector panel toggles, Focus map, visual `focusedEntity` semantics, and heading scrubber are now documented in [`PHASE_4_4_HANDOFF.md`](./PHASE_4_4_HANDOFF.md). The Phase 4.3 placement and FOV contracts remain unchanged.
-- No schema, Observation cache, coverage formula, public API, commit, push, or remote mutation is part of this work.
+- No schema, Observation cache, coverage formula, or public API was changed by this phase. The implementation is now committed and pushed; current panel/focus polish is recorded in [`PHASE_4_4_HANDOFF.md`](./PHASE_4_4_HANDOFF.md).
 - `fovColorMode`, placement step, pending anchor, heading preview, and legend coordinates remain UI/controller-local state.
 
 ## Camera placement contract

@@ -5,6 +5,7 @@
 ## Status
 
 - Phase 4.2 UI bugfix is complete in committed history at `8253133`; this document is the historical Phase 4.2 contract. Phase 4.3 starts from that clean commit and is documented separately.
+- Current repository HEAD is `29b753e`; Phase 4.3 and Phase 4.4 extend this contract without changing its schema, Observation-cache, coverage, or UI-only-state boundaries.
 - The implementation checkout is `D:\Workplace\port-cam-plan` on branch `codex/multi-cam`. The user-facing C: OneDrive link is not the Git checkout.
 - Phase 4.2 bugfix baseline before its edits: `379f94f` — `Add YOLO coverage and FOV color modes`.
 - Phase 4.1 and Phase 4.2 implementation changes are already represented by the committed baseline above; this handoff does not describe them as uncommitted.

@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase 4.4 is implemented on the clean `fc9566a` Phase 4.3 baseline in `codex/multi-cam`.
-- This work is intentionally uncommitted and unpushed. No remote state was changed.
+- Phase 4.4 is implemented and committed as `29b753e` (`Document Phase 4.4 UI projection and panel controls`) on `codex/multi-cam`, following the clean `fc9566a` Phase 4.3 baseline.
+- The implementation `HEAD` and `origin/codex/multi-cam` are aligned at `29b753e`; this documentation synchronization is the current uncommitted working-tree change.
 - Project/Scene schemas, Observation cache, spherical-v1 calculations, coverage formula, and public Map/Store contracts remain unchanged.
 
 ## Panel and Focus map contract
@@ -11,6 +11,7 @@
 - The Top Bar exposes independent `Objects`, `Inspector`, and `Focus map` controls. Objects and Inspector use `aria-pressed`, `aria-expanded`, and `aria-controls`; their in-panel close buttons remain available.
 - `uiState.panelOpen.objectManager` defaults to `true`. Closing Object Manager removes the rail/grid column without clearing tab, search, scroll, Active Camera, Current Target, or `focusedEntity`. Closing Inspector removes its column/overlay at every responsive breakpoint.
 - `uiState.focusMapMode` defaults to `false` and is UI-only. Entering Focus map clears only `focusedEntity`, hides Object Manager/Inspector/Bottom Workspace, and preserves the underlying `panelOpen` values. Leaving restores that panel configuration while retaining the map toolbar, FOV control, Map Settings, status, and Coverage legend.
+- Focus map applies a final single-column grid rule after the responsive panel rules, so the map remains full-width when either or both panels were open, including the DPR 2 layout path.
 - Escape, blank Navigate map clicks, and explicit Focus map exit follow the interaction-priority rules. Marker/row refocus exits Focus map, updates the relevant Active/Current selection, sets `focusedEntity`, and opens Inspector Details. UI-only changes never affect revision, history, dirty state, Undo/Redo, or exports.
 
 ## Selection and map projection
@@ -28,7 +29,7 @@
 ## Verification
 
 - Node suite: `node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js test_camera_comparison.js test_yolo_coverage.js` — 38/38 passed.
-- Static checks: `node --check portcam-store.js`, `node --check portcam-map.js`, `node --check portcam-ui.js`, and `git diff --check` passed.
+- Static checks: `node --check portcam-store.js`, `node --check portcam-map.js`, `node --check portcam-ui.js`, and `git diff --check` passed. The final CSS fix was also checked with the browser smoke below.
 - Python tests were not run because Python, Scene consumer, schema, Observation cache, and calculation contracts are unchanged.
 - Browser smoke evidence covers 1366×768, 1920×1080, and an iPad Pro 11 emulation at 1920×1080/DPR2: panel allocation, Focus map enter/exit, blank-map/Escape clear focus, Camera colors/Coverage legend visibility, heading keyboard/pointer commit/cancel, legend drag/mode retention/reset/reload, body overflow, and zero console errors/warnings.
 - Visual artifacts: [`phase44-1366.png`](../output/playwright/phase44-1366.png), [`phase44-1920.png`](../output/playwright/phase44-1920.png), and [`phase44-1920-dpr2.png`](../output/playwright/phase44-1920-dpr2.png).

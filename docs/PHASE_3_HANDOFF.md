@@ -2,9 +2,9 @@
 
 ## Status and scope
 
-- Status: App Shell and core workspace implemented locally on 2026-08-16.
+- Status: Historical Phase 3 App Shell and core workspace handoff; the implementation was subsequently committed through the Phase 3.2 and Phase 4 commits, with current behavior summarized in [`PHASE_4_4_HANDOFF.md`](PHASE_4_4_HANDOFF.md).
 - Repository: `D:\Workplace\port-cam-plan`.
-- No commit, push, release, import, save, or remote mutation was made.
+- The original Phase 3 handoff did not itself commit or push changes; later commits now contain the delivered implementation. This document preserves the Phase 3 acceptance record.
 - The implementation uses the existing `PortCamStore` and `PortCamMap` as the only Camera／Target state and projection sources.
 
 Phase 3 includes the Top Bar, Camera Rail, Camera Inspector, Map Workspace, Result Drawer, and collapsed／expanded Bottom Workspace. Phase 3.1 adds the shared Camera／Target entity interactions and Target List. It intentionally does not include Project Import／Save, Camera Comparison data, exact four-corner projection, DEM, EPSG:3826, or new Ray Casting／water algorithms.

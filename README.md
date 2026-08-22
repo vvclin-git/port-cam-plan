@@ -1,6 +1,6 @@
 # 港區 AI 攝影機規劃工具
 
-Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 YOLO 目標尺寸；v0.7 新增固定快照的水域／陸地 overlay 與點擊分類，v0.7.1 將 Leaflet 靜態資源本地化。
+Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 YOLO 目標尺寸；目前版本為 v0.9 Phase 4.4，已包含多 Camera Comparison、YOLO Coverage、互斥 FOV 著色、兩階段 Camera 放置、可移動 Coverage Legend、可收合面板與 Focus map。
 
 ## 開啟
 
@@ -29,7 +29,12 @@ python -m http.server 8765 --bind 127.0.0.1
 - 地圖底圖：OpenStreetMap、NLSC 通用電子地圖與 NLSC 正射影像。
 - 預設開啟水域／陸地 overlay；可獨立關閉視覺圖層，點擊分類仍會運作。
 - 一般地圖點擊放置測試目標，顯示距離、方位、HFOV、bbox、COCO size、P3/P4/P5、YOLO heuristic 與 `water`／`land`／`Unknown` 地表類型。
-- 「地圖點選 Camera」模式只移動 Camera，不觸發 target 分類。
+- Camera 與 Target 是獨立 Project entity；Active Camera、Current Target 與 visual `focusedEntity` 分離管理。
+- `Place Camera`／`Add Camera` 共用兩階段流程：先點位置，再移動游標指定 Heading；第二次有效點擊才建立一台 `placed` Camera。
+- Navigate 模式可拖曳 focused、visible、unlocked Camera／Target marker；`place-camera` 不再搬動既有 Camera。
+- Map-level `FOV display` 支援 `Camera colors` 與 `Pixel coverage` 互斥模式；Coverage 會對所有符合資格的 Camera 顯示四級 bands。
+- Pixel coverage Legend 僅在 Coverage 模式顯示，支援 Pointer Events 拖曳、觸控、鍵盤位移、Escape 還原、Reset 與 workspace 邊界限制。
+- Top Bar 提供獨立 `Objects`、`Inspector`、`Focus map` 控制；Inspector 的 Heading 另有 N/E/S/W compass scrubber。
 - FOV coverage 依短邊像素分成 ≥32、16–32、8–16、<8 px 四段。
 
 ## v0.7 水陸圖資
@@ -139,7 +144,7 @@ node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');con
 
 ## Phase 2 Reactive Leaflet 多 Camera
 
-[`portcam-map.js`](./portcam-map.js) 將 Store state 投影成每台 Camera/Target 各自的 Leaflet LayerGroup；Camera Manager 可選取、新增、複製、重新定位、刪除與切換 visible/enabled/locked。所有畫面更新由單一 Store subscription 驅動，因此 Undo/Redo、selection、visibility、lock、enabled 與 commit 都會更新 marker、FOV、表單與 connection line，而不是依賴舊的 `updateAll()`。
+[`portcam-map.js`](./portcam-map.js) 將 Store state 投影成每台 Camera/Target 各自的 Leaflet LayerGroup；Object Manager 可選取、新增、複製、刪除與切換 visible/enabled/locked。既有 Camera 的位置移動在 Navigate 模式透過 marker drag 完成，`place-camera` 僅建立新 Camera。所有畫面更新由單一 Store subscription 驅動，因此 Undo/Redo、selection、visibility、lock、enabled 與 commit 都會更新 marker、FOV、表單與 connection line，而不是依賴舊的 `updateAll()`。
 
 `camera-project/1.0` 與 selected-Camera `camera-scene/1.1` 保持不變。完整範圍、測試證據與尚需 real-browser 驗收的互動項目見 [`docs/PHASE_2_HANDOFF.md`](./docs/PHASE_2_HANDOFF.md)。
 
@@ -152,13 +157,13 @@ python -m unittest -v test_ray_cast_test.py
 
 ## Phase 3 App Shell 與核心工作區
 
-正式入口 [`index.html`](./index.html) 現在使用 [`app.css`](./app.css) 與 [`portcam-ui.js`](./portcam-ui.js) 投影桌面 App Shell：Top Bar、Object Manager、Context Inspector、Map Workspace，以及預設收合的 Bottom Workspace。
+正式入口 [`index.html`](./index.html) 現在使用 [`app.css`](./app.css) 與 [`portcam-ui.js`](./portcam-ui.js) 投影桌面 App Shell：Top Bar、Object Manager、Inspector、Map Workspace，以及預設收合的 Bottom Workspace。
 
 - `PortCamUI.createAppController({store, mapController, root})` 負責 Store-driven DOM projection、panel state、responsive invalidation 與 cleanup；實際頁面以 `map`／Leaflet 建立既有 `PortCamMap` controller。
 - Object Manager 是 Visible／Enabled／Locked 的唯一控制入口；其 Cameras／Targets tabs 均支援搜尋、選取、重新命名、Fit、複製與刪除。
-- Context Inspector 的 Details 顯示 focused entity；Observation 即時計算 Current Target 由 Active Camera 觀測的結果，不建立或保存物件關係。`setActiveResultTab` 僅為相容性保留的 deprecated UI-only API。
+- Inspector 的 Details 顯示 focused entity；Observation 即時計算 Current Target 由 Active Camera 觀測的結果，不建立或保存物件關係。`setActiveResultTab` 僅為相容性保留的 deprecated UI-only API。
 - Camera 與 Target 欄位都採 preview／blur／Enter single-commit；Target Details 在 preview 時保留 active input、捲動與 section 收合狀態。
-- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown`、tile zoom 與獨立 labels 設定。Project Import／Save、Comparison table 與精確四角 ray 仍不在本階段。
+- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown`、tile zoom 與獨立 labels 設定。Project Import／Save 與精確四角 ray 仍不在本階段；Comparison 與 YOLO Coverage 已由 Phase 4 實作。
 
 ## Phase 3.1 共用 Entity、地圖互動與 Target List
 
@@ -167,16 +172,28 @@ python -m unittest -v test_ray_cast_test.py
 - Camera／Target 共用 `PortCamMap.createEntityMarkerInteraction`，只有 focused、visible、unlocked 且 `navigate` 才能拖曳；Active Camera／Current Target selection 與 visual focus 分離。preview 不改 revision/history/dirty，drag end 只 commit 一次。
 - Target 使用 `L.marker`／`L.divIcon` crosshair；FOV、YOLO、centerline、connection line 不攔截 pointer，Current Target 保留 connection line，visual marker emphasis 則由 `focusedEntity` 控制。
 - Wheel 由 MapController 單一 non-passive handler 處理，正規化 pixel／line／page delta，同方向 180 ms burst 最多縮放一級，Ctrl+wheel 保留瀏覽器縮放。
-- Bottom Workspace Targets 分頁支援 Search、Select、Rename、Visible、Enabled、Locked、Duplicate、Delete、Fit Target；Search 是 UI-only state，不進 Project、history 或 dirty。
+- Object Manager 的 Cameras／Targets 分頁支援 Search、Select、Rename、Visible、Enabled、Locked、Duplicate、Delete、Fit Target；搜尋、分頁、捲動與 focus 是 UI-only state，不進 Project、history 或 dirty。
 - Camera／Target labels 預設開啟，Map Settings 可分別切換；rename 更新既有 tooltip，不重建或累積 labels。
 
 ## Phase 3.2 Unified Object Management UI
 
-左側 Object Manager 收斂 Cameras／Targets 表格；右側 Inspector 以 Details／Observation 顯示 focused entity 與 Current Target／Active Camera 的即時計算結果。Phase 4.4 增加可獨立收合的 Objects／Inspector、UI-only Focus map 與 heading compass scrubber；Bottom Workspace 僅保留 Phase 4 的 Comparison／YOLO placeholders。細節見 [`docs/PHASE_4_4_HANDOFF.md`](./docs/PHASE_4_4_HANDOFF.md)。
+左側 Object Manager 收斂 Cameras／Targets 表格；右側 Inspector 以 Details／Observation 顯示 focused entity 與 Current Target／Active Camera 的即時計算結果。Phase 4.4 增加可獨立收合的 Objects／Inspector、UI-only Focus map 與 heading compass scrubber；Bottom Workspace 的 Comparison 與 YOLO Coverage 已使用純 derived analysis，不寫入 Project／Scene。細節見 [`docs/PHASE_4_4_HANDOFF.md`](./docs/PHASE_4_4_HANDOFF.md)。
 
 2026-08-17 UI polish 移除 Top Bar Observation、Camera Open Result 與舊 Result Drawer DOM；Target 建立後自動切到 Observation。Target marker drag preview 不會重建作用中的 `L.divIcon`，只在 selected／locked／enabled 樣式改變時更新 icon。
 
 完整實際範圍、API、Node／browser evidence 與未完成人工 gate 見 [`docs/PHASE_3_HANDOFF.md`](./docs/PHASE_3_HANDOFF.md)。
+
+## Phase 4 多 Camera analysis 與地圖控制
+
+目前 HEAD 為 `29b753e`，Phase 4.1–4.4 已在 `codex/multi-cam` 分支提交。這些功能維持既有 `camera-project/1.0`、selected-Camera `camera-scene/1.1`、`spherical-v1`、Observation cache、coverage 計算與公開 Store／Map API：
+
+- Camera Comparison 以 enabled Camera 的 Current Target Observation 排序，支援 Visible／Outside FOV／Unavailable／Failed 狀態與鍵盤啟用 Active Camera。
+- YOLO Coverage 以同一 Observation 結果產生四級摘要；地圖 Pixel coverage 則使用 Project `planningTargetHeightM` 與既有距離裁切，兩者不共用第二套 Observation cache。
+- Camera colors 與 Pixel coverage 是互斥的 map display mode；Camera identity 顏色只在前者出現，Coverage bands 與 neutral FOV geometry 只在後者出現。
+- Add／Place Camera 的 pending anchor、placement step、heading preview、FOV mode、legend 座標、panel state 與 Focus map 都是 UI-only，不進 schema、revision、history、dirty、Undo／Redo 或 export。
+- Focus map 在所有支援的 panel／DPR 組合中將地圖配置為單欄全寬；離開後還原 Objects／Inspector 的原本開關狀態。
+
+詳細契約與驗收紀錄：[`PHASE_4_1_HANDOFF.md`](./docs/PHASE_4_1_HANDOFF.md)、[`PHASE_4_2_HANDOFF.md`](./docs/PHASE_4_2_HANDOFF.md)、[`PHASE_4_3_HANDOFF.md`](./docs/PHASE_4_3_HANDOFF.md)、[`PHASE_4_4_HANDOFF.md`](./docs/PHASE_4_4_HANDOFF.md)。
 
 ## 驗證
 
@@ -188,5 +205,16 @@ node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');con
 ```
 
 瀏覽器驗證應確認 localhost 載入、預設 overlay、checkbox 開關、三種底圖、一般點擊分類、Camera 放置模式，以及 GeoJSON 404 時既有功能仍可使用。NLSC 正射影像至少抽查 10 點、岸線 5–15 m 的潮位／資料日期差異列為容許帶；ray casting 與相機視角預覽不在 v0.7 範圍。
+
+Phase 4 回歸命令：
+
+```powershell
+node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js test_camera_comparison.js test_yolo_coverage.js
+node --check portcam-store.js
+node --check portcam-map.js
+node --check portcam-ui.js
+```
+
+目前完整 Node suite 為 38/38；Phase 4 browser smoke 已涵蓋 1366×768、1920×1080 與 DPR 2，並驗證 panel allocation、Focus map、FOV mode、legend、heading scrubber、body overflow 與 console error/warning。
 
 詳細規格、schema、分類狀態與後續接點見 [`docs/SURFACE_LAYER_IMPLEMENTATION.md`](./docs/SURFACE_LAYER_IMPLEMENTATION.md)。

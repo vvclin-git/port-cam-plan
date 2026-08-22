@@ -1,5 +1,11 @@
 # 港區 AI 攝影機規劃工具：UI 架構與操作流程
 
+> **Current implementation snapshot — 2026-08-22**
+>
+> Repository HEAD is `29b753e` on `codex/multi-cam`. Phase 4.1–4.4 are implemented and committed. For live UI behavior, use [`PHASE_4_4_HANDOFF.md`](./PHASE_4_4_HANDOFF.md) together with the Phase 4.1–4.3 handoffs; the earlier sections in this architecture record retain design rationale and historical terminology where explicitly noted.
+>
+> The current UI has Object Manager, Inspector, Map Workspace, and Bottom Workspace. `selectedCameraId`／`selectedTargetId` are Active Camera／Current Target analysis inputs; `focusedEntity` is the independent visual/edit focus. `navigate | place-camera | place-target` are the live interaction modes. FOV display, legend position, panel state, Focus map, and placement preview are UI-only state.
+
 ## 1. 文件目的
 
 本文件整理目前討論形成的 UI 架構、操作流程、資料模型、互動規則與系統狀態，作為後續 UX 設計、前端實作與驗收的共同依據。
@@ -80,7 +86,7 @@
 
 8. **摘要與詳細資料分層**
    - 地圖顯示必要資訊。
-   - 詳細數值透過 Inspector、Result Drawer 或 Bottom Workspace 查看。
+   - 詳細數值透過 Inspector 或 Bottom Workspace 查看。
 
 9. **資料歸屬清楚**
    - Camera、Target、Observation 與 UI state 不混合儲存。
@@ -94,21 +100,18 @@
 
 建議採用：
 
-**Camera Rail + Camera Inspector + Map + Result Drawer + Bottom Analysis Workspace**
+**Object Manager + Inspector + Map Workspace + Bottom Analysis Workspace**
 
 ```text
 ┌──────────────────────────── Top Bar ──────────────────────────────┐
-│ Project / Import / Save / Settings / Status                      │
-├──────┬───────────────┬──────────────────────────────┬─────────────┤
-│Camera│ Camera        │                              │ Result      │
-│ Rail │ Inspector     │             MAP              │ Drawer      │
-│      │               │                              │             │
-│ A    │ Position      │ Camera marker / FOV         │ Target      │
-│ B    │ Orientation   │ Target marker               │ Observation │
-│ C    │ Optics        │ Camera-target line          │ Coverage    │
-│ +    │               │                              │             │
-├──────┴───────────────┴──────────────────────────────┴─────────────┤
-│ ▼ Bottom Analysis Workspace                                     │
+│ Project / Undo / Redo / Objects / Inspector / Focus map / Status │
+├──────────────┬──────────────────────────────────────┬─────────────┤
+│ Object       │                                      │ Inspector   │
+│ Manager      │              MAP WORKSPACE           │ Details /   │
+│ Cameras      │ Camera／Target／FOV／Coverage        │ Observation │
+│ Targets      │ FOV display / Map Settings          │             │
+├──────────────┴──────────────────────────────────────┴─────────────┤
+│ ▼ Bottom Workspace: Camera Comparison / YOLO Coverage           │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -122,28 +125,27 @@
 
 - App 名稱與版本。
 - Project 名稱。
-- Import。
-- Save。
-- Global Settings。
-- Help。
+- Undo／Redo。
+- Objects／Inspector／Focus map。
+- Project Settings。
 - Dirty / saved 狀態。
-- App warning / error 狀態。
+- Map-level FOV display 與 Map Settings 不放在 Top Bar，而位於 Map Workspace。
 
 Top Bar 只放 project-level 操作，不放單一 Camera 參數。
 
 ---
 
-# 4.2 Camera Rail
+# 4.2 Object Manager
 
 建議寬度約 72–80 px。
 
-Camera Rail 是 Camera selection 與 Camera management 的主要入口。
+Object Manager 是 Camera／Target selection 與 management 的主要入口，使用 Cameras／Targets tabs 與各自的搜尋欄。Object Manager 可獨立收合，收合不清除 tab、search、scroll、Active／Current 或 focusedEntity。
 
 每台 Camera 至少顯示：
 
 - Color identifier。
 - Short name。
-- Selected state。
+- Active／Current／focused state。
 - Visibility。
 - Lock。
 - Enabled / disabled。
@@ -155,17 +157,17 @@ Camera Rail 是 Camera selection 與 Camera management 的主要入口。
 - Select Camera。
 - Duplicate Camera。
 - Rename Camera。
-- Show / hide FOV。
+- Fit Camera／Fit Target。
 - Lock / unlock。
 - Delete Camera。
 
-Camera 數量超過畫面高度時，只允許 Camera Rail 自身捲動。
+Camera／Target 數量超過畫面高度時，只允許 Object Manager 自身捲動。
 
 ---
 
 ## 4.2.1 Camera Selection
 
-點擊 Camera Rail 中任一 Camera：
+點擊 Object Manager 中任一 Camera row 或 Camera marker：
 
 1. 更新：
 
@@ -173,9 +175,9 @@ Camera 數量超過畫面高度時，只允許 Camera Rail 自身捲動。
 selectedCameraId = clickedCameraId
 ```
 
-2. Camera Inspector 載入該 Camera。
-3. 地圖強調該 Camera marker。
-4. 地圖強調該 Camera FOV。
+2. Inspector Details 載入該 Camera。
+3. `focusedEntity` 設為該 Camera，地圖強調 marker。
+4. 地圖強調該 Camera FOV；Active Camera selection 仍可獨立保留。
 5. 其他 Camera 保持可見但降低視覺強調。
 6. `selectedTargetId` 保持不變。
 7. `mapInteractionMode` 保持不變。
@@ -198,9 +200,9 @@ mapInteractionMode = navigate
 
 # 4.3 Camera Inspector
 
-Camera Inspector 約 320–360 px。
+Inspector 約 340 px，窄版以 overlay 呈現。
 
-只編輯目前 selected Camera。
+只編輯目前 `focusedEntity` 指向的 Camera；Observation tab 仍使用 Active Camera／Current Target。
 
 ## Position & Orientation
 
@@ -208,6 +210,7 @@ Camera Inspector 約 320–360 px。
 - Longitude。
 - Camera altitude / height。
 - Heading。
+- N/E/S/W heading compass scrubber；拖曳使用 preview，完成時只 commit 一筆 history。
 - Tilt。
 
 ## Sensor & Lens
@@ -259,25 +262,28 @@ Camera Inspector 約 320–360 px。
 - Layer control。
 - Map Interaction toolbar。
 - Compact calculation summary。
+- Map-level `FOV display`：`Camera colors`／`Pixel coverage`。
+- Coverage-only draggable Legend 與 Map Settings。
+- Focus map control；進入後隱藏 panel 並將地圖配置成單欄全寬。
 
 ---
 
 ## 4.4.1 Camera Visual Hierarchy
 
-### Selected Camera
+### Focused Camera
 
 - 高不透明度。
 - 較粗 FOV outline。
-- 醒目 marker。
+- 醒目 marker；Active Camera 的 analysis selection 可不同。
 
 ### Unselected Camera
 
 - 保持可見。
-- FOV 降低 opacity。
+- FOV 降低 opacity；Coverage mode 使用 neutral geometry。
 
 ### Hidden Camera
 
-- Camera 仍存在於 Camera Rail。
+- Camera 仍存在於 Object Manager。
 - FOV 不顯示。
 
 ### Locked Camera
@@ -289,10 +295,10 @@ Camera Inspector 約 320–360 px。
 
 ## 4.4.2 Camera Marker Selection
 
-點擊 Camera marker 與點擊 Camera Rail item 必須使用同一套 selection logic：
+點擊 Camera marker 與點擊 Object Manager row 必須使用同一套 focus／selection logic：
 
 ```text
-selectCamera(cameraId)
+focusEntity({ kind: "camera", id: cameraId })
 ```
 
 Camera marker click 不應：
@@ -320,7 +326,7 @@ Camera 切換只影響：
 
 - Observation。
 - Camera-to-target line。
-- Result Drawer。
+- Inspector Observation。
 
 ---
 
@@ -334,7 +340,7 @@ Target 即使位於 selected Camera 的 FOV 外，仍正常存在與顯示。
 
 - Target marker 正常保留。
 - Camera-to-target line 使用較低強度或虛線。
-- Result Drawer 顯示明確的 `Outside FOV` 狀態。
+- Inspector Observation 顯示明確的 `Outside FOV` 狀態。
 - 不使用阻斷式 Modal。
 
 Target 位於 FOV 外不是資料錯誤，而是合法的 Observation 結果。
@@ -358,7 +364,7 @@ Phase 1 建議實作：
 ```text
 navigate
 place-camera
-select-target
+place-target
 ```
 
 UI 可顯示：
@@ -417,7 +423,7 @@ mapInteractionMode = navigate
 
 ---
 
-# 5.3 Select Target
+# 5.3 Place Target
 
 用於建立 Target。
 
@@ -428,7 +434,7 @@ mapInteractionMode = navigate
 1. 切換：
 
 ```text
-mapInteractionMode = select-target
+mapInteractionMode = place-target
 ```
 
 2. 點擊地圖。
@@ -536,18 +542,15 @@ Target creation 僅驗證 Target 本身是否有效，例如：
 
 ---
 
-# 5.4 Future: Move Camera
+# 5.4 Move Existing Camera
 
-未來可加入 Camera marker drag。
+Navigate 模式下既有 Camera 使用 marker drag 移動。僅允許：
 
-僅允許：
-
-- selected。
+- focused。
 - unlocked。
+- visible。
 
-Camera 可拖曳。
-
-首版可不實作，統一使用 Place Camera。
+拖曳使用 Store preview，`dragend` 只建立一筆 history transaction；`place-camera` 僅用於建立新 Camera，不會搬動既有 Camera。
 
 ---
 
@@ -559,6 +562,14 @@ UI 保留兩個彼此獨立的 selection：
 selectedCameraId
 selectedTargetId
 ```
+
+另有獨立的 UI-only visual/edit focus：
+
+```text
+focusedEntity = null | { kind: "camera" | "target", id }
+```
+
+Active Camera／Current Target 供 Observation、Comparison 與 YOLO 使用；`focusedEntity` 供 marker emphasis、Inspector Details 與 Navigate drag 使用。清除 focus 不會清除前兩者。
 
 兩者皆可為 `null`。
 
@@ -634,11 +645,12 @@ Camera selection 不變。
 ```text
 selectedCameraId = unchanged
 selectedTargetId = unchanged
+focusedEntity = null
 ```
 
-不取消 selection。
+不取消 Active Camera／Current Target；只清除 visual/edit focus，關閉 Inspector 的 focused Details 視圖。Escape 也依同一優先序清除 focus。
 
-只有以下情況才清除：
+Active／Current selection 只有以下情況才清除：
 
 - Explicit Clear Camera。
 - Explicit Clear Target。
@@ -647,11 +659,11 @@ selectedTargetId = unchanged
 
 ---
 
-# 7. Result Drawer
+# 7. Inspector and Observation
 
-Result Drawer 約 360–400 px。
+目前由 Inspector 的 Details／Observation tabs 取代舊 Result Drawer；Inspector 可由 Top Bar 或 panel close button 獨立開關。
 
-內容由 Selection Model 決定。
+Details 內容由 `focusedEntity` 決定；Observation 內容使用獨立的 Active Camera／Current Target。
 
 ---
 
@@ -676,7 +688,7 @@ selectedTargetId != null
 - Delete。
 - Fit map。
 
-不顯示 Camera-dependent calculation。
+不顯示 Camera-dependent calculation；Target 仍保留在 Object Manager 與地圖上。
 
 ---
 
@@ -689,7 +701,7 @@ selectedCameraId != null
 selectedTargetId != null
 ```
 
-標題：
+Inspector Observation 標題：
 
 ```text
 Camera B | Target 03
@@ -713,11 +725,11 @@ Camera B | Target 03
 
 ---
 
-## 7.3 Outside FOV Result
+## 7.3 Outside FOV Observation
 
 若 Target 不在 selected Camera FOV 內：
 
-Result Drawer 不應顯示一般 error。
+Inspector 不應顯示一般 system error。
 
 應顯示一個合法但不可觀測的 Observation 狀態。
 
@@ -756,11 +768,8 @@ Status: Outside FOV
 
 280–320 px。
 
-Phase 1 先建立 layout shell。
+目前 Bottom Workspace 先保留 layout shell，預設收合；展開後提供：
 
-未來主要分頁：
-
-- Targets。
 - Camera Comparison。
 - YOLO Coverage。
 
@@ -797,9 +806,11 @@ Camera C   Outside VFOV
 
 點擊某 Camera row：
 
-- selected Camera 改變。
-- selected Target 保持。
-- Result Drawer 同步更新。
+- Active Camera 改變。
+- Current Target 保持。
+- Inspector／地圖投影同步更新。
+
+YOLO Coverage 使用既有 Observation 結果產生四級摘要；地圖上的 Pixel coverage 使用 `planningTargetHeightM` 與既有 ground envelope，兩者不建立第二套 Observation cache。
 
 ---
 
@@ -807,7 +818,7 @@ Camera C   Outside VFOV
 
 ## 9.1 Add Camera
 
-1. 點 Camera Rail `+`。
+1. 點 Object Manager 的 `Add Camera` 或地圖 toolbar 的 `Place Camera`。
 2. 進入 `place-camera`，不建立 draft、不改 dirty state。
 3. 第一次點擊地圖記錄 anchor，顯示 ghost marker 與完整 FOV preview。
 4. 移動游標更新 heading；第二次有效點擊才建立 `placed` Camera。
@@ -820,7 +831,7 @@ Camera C   Outside VFOV
 
 使用者可透過：
 
-- Camera Rail。
+- Object Manager row。
 - Camera marker。
 
 選取 Camera。
@@ -832,7 +843,7 @@ Click Camera B
         ↓
 selectedCameraId = B
         ↓
-Update Inspector
+Update Inspector Details
         ↓
 Highlight Camera B + FOV
         ↓
@@ -850,7 +861,7 @@ Target selected?
          ↓
       Update Camera-target line
          ↓
-      Update Result Drawer
+      Update Inspector Observation
 ```
 
 若 Target 不在新 selected Camera FOV 內，Target selection 保留，Observation 改為對應的 `outside-*` 狀態。
@@ -1458,17 +1469,22 @@ UI state 不寫入 Project geometry data。
 ```text
 selectedCameraId
 selectedTargetId
+focusedEntity
 mapInteractionMode
 
-inspectorOpen
-resultDrawerOpen
+panelOpen.objectManager
+panelOpen.inspector
 bottomWorkspaceOpen
 
-activeResultTab
-activeWorkspaceTab
+inspectorTab
+objectManagerTab
+cameraSearchQuery
+targetSearchQuery
+fovColorMode
+focusMapMode
 ```
 
-Selection 可為 null。
+Selection 可為 null。Placement step、pending anchor／heading、legend 座標與 heading drag 狀態則保留在 UI controller-local state，不寫入 Store。
 
 ---
 
@@ -1674,10 +1690,10 @@ body scroll = disabled
 尺寸建議：
 
 - Top Bar：52–56 px。
-- Camera Rail：72–80 px。
-- Inspector：320–360 px。
-- Result Drawer：360–400 px。
-- Bottom Workspace：280–320 px。
+- Object Manager：300 px。
+- Inspector：340 px（窄版為 overlay）。
+- Bottom Workspace：300 px。
+- Focus map：單欄全寬，保留 Map toolbar、FOV display、Map Settings 與 Coverage legend。
 
 Panel 內容超出時：
 
@@ -1748,34 +1764,33 @@ Target box schema 可以先存在，但 UI 與 calculation 暫時只使用 Phase
 
 ---
 
-# 23. 後續 Phase 建議
+# 23. Phase roadmap and current implementation
 
-## Phase 2：Multi-Camera Analysis
+## Phase 2：Multi-Camera foundation — completed
 
-- Camera Comparison。
-- Multiple Target comparison。
-- Complete Bottom Workspace。
-- Coverage ranking。
-- Camera recommendation。
+- Reactive multi-Camera Store／Leaflet projection。
+- Independent Active Camera／Current Target selection。
+- Object Manager、Target management、Observation invalidation。
 
-## Phase 3：Target Geometry
+## Phase 3：App Shell and interaction — completed
 
-- Box Target。
-- Length / width / height UI。
-- Target heading。
-- Image-space projected bbox。
-- Pixel width / height / area。
-- Box-aware YOLO coverage。
+- Object Manager、Inspector、Map Workspace、Bottom Workspace。
+- Shared Camera／Target marker drag、wheel policy、labels、Surface layer。
+- Target dimensions／heading 與 Current Target／Active Camera Observation UI。
 
-## Phase 4：Project & Data Exchange
+## Phase 4：Multi-Camera analysis and map control — completed
 
-- 完整 `camera-project/1.x`。
-- Schema migration。
-- Batch analysis。
-- Project interchange。
+- Camera Comparison 與 YOLO Coverage derived analysis。
+- Camera colors／Pixel coverage 互斥 FOV display 與 Coverage-only draggable Legend。
+- Add／Place Camera 兩階段建立、Navigate marker relocation、map-level FOV control。
+- Objects／Inspector toggles、Focus map、focusedEntity separation、Heading scrubber。
+- 以上均維持 `camera-project/1.0`、`camera-scene/1.1`、Observation cache 與 `spherical-v1` 契約。
 
-## Future Analysis Modules
+## Next phases / remaining work
 
+- Project Import／Save 與完整 project interchange。
+- Box Target 影像空間投影與更完整的 multi-target analysis。
+- Recommendation／batch analysis UX。
 - Ray Casting。
 - DEM。
 - Terrain occlusion。

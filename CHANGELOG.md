@@ -1,5 +1,28 @@
 # Changelog
 
+## Phase 4.4 — 2026-08-22 (`29b753e`)
+
+- Added independent `Objects`, `Inspector`, and `Focus map` controls with responsive panel allocation and full-width Focus map projection, without putting panel state into Project data or history.
+- Separated visual/edit `focusedEntity` from Active Camera and Current Target selection; marker drag, FOV emphasis, Inspector Details, and keyboard/row refocus follow visual focus while Observation／Comparison／YOLO retain independent analysis inputs.
+- Added the Heading compass scrubber with pointer capture, Store preview, one-transaction commit, Escape/pointer-cancel rollback, and keyboard movement.
+- Updated Phase 4.4 browser evidence for 1366×768, 1920×1080, and DPR 2; the complete Node suite reached 38/38.
+
+## Phase 4.3 — 2026-08-21 (`fc9566a`)
+
+- Unified Add Camera and Place Camera as a two-stage UI-only placement flow: location first, heading second, then one placed-Camera history transaction.
+- Existing Camera relocation now uses Navigate-mode marker drag; `place-camera` no longer relocates the selected Camera.
+- Moved the FOV display switch to the map-level control group and reused the Phase 4.2 mutually exclusive preview/rendering branches.
+
+## Phase 4.2 FOV bugfix — 2026-08-20 (`8253133`)
+
+- Separated Camera identity envelopes from Pixel coverage bands; Camera colors has no bands, while Pixel coverage uses neutral FOV geometry and complete four-level bands for every eligible Camera.
+- Added a Coverage-only draggable Legend with Pointer Events, pointer capture, keyboard movement, Reset, Escape rollback, workspace-bound clamping, and session-local coordinates.
+
+## Phase 4.1 / Phase 4.2 analysis — 2026-08-20 (`379f94f`)
+
+- Added derived Camera Comparison ranking and the YOLO Coverage summary/table without persisting analysis results or changing the Observation cache.
+- Added map-level FOV color modes, four YOLO coverage tiers, disabled/hidden/unavailable states, and the associated Node/browser regression coverage.
+
 ## Phase 3.3 — 2026-08-18
 
 - Reframed Observation as the Current Target observed by the Active Camera; removed permanent relationship language without changing selection, cache, project, or scene contracts.
