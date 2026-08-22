@@ -280,6 +280,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .panel-overlay.inspector { left: var(--rail-width); }
 .panel-overlay.result-drawer { right: 0; }
 
+.modal-backdrop { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 18px; background: rgba(18, 29, 43, .48); }
+.modal-backdrop[hidden] { display: none !important; }
+.settings-dialog { width: min(540px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 1px solid rgba(30, 45, 65, .24); border-radius: 12px; box-shadow: 0 18px 60px rgba(14, 26, 43, .28); }
+.settings-dialog-header { flex: 0 0 auto; }
+.settings-dialog-scroll { min-height: 0; overflow: auto; padding: 0 14px 14px; }
+.settings-dialog-scroll .panel-section:first-child { padding-top: 6px; }
+.settings-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 12px 0 0; }
+.settings-dialog-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 7px; padding: 11px 14px; border-top: 1px solid var(--line); background: var(--panel-muted); }
+.settings-dialog-footer .action-button { min-width: 92px; }
+.settings-accordion { display: grid; gap: 8px; }
+.settings-accordion-item { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+.settings-accordion-heading { margin: 0; }
+.settings-accordion-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 0; color: var(--text); background: var(--panel-muted); font: inherit; font-weight: 750; text-align: left; cursor: pointer; }
+.settings-accordion-icon { width: 7px; height: 7px; flex: 0 0 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); }
+.settings-accordion-toggle[aria-expanded="true"] .settings-accordion-icon { transform: rotate(45deg); }
+.settings-accordion-panel { padding: 0 12px 12px; }
+.settings-accordion-panel .panel-section:first-child { padding-top: 4px; }
+.settings-accordion-description { margin: 4px 0 0; color: var(--muted); line-height: 1.55; }
+
 .entity-label { pointer-events: none !important; border: 1px solid rgba(24,34,48,.2); border-radius: 4px; padding: 2px 5px; color: var(--text); background: rgba(255,255,255,.9); box-shadow: 0 2px 7px rgba(20,34,52,.16); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .entity-marker-wrapper { border: 0 !important; background: transparent !important; }
 .target-marker { position: relative; display: block; width: 26px; height: 26px; border: 2px solid #202936; border-radius: 50%; background: rgba(255,255,255,.92); box-shadow: 0 1px 5px rgba(20,34,52,.35); }

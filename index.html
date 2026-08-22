@@ -12,7 +12,7 @@
   <div class="app-shell" id="appShell">
     <header class="top-bar">
       <div class="brand">
-      <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 4.4</span></div>
+      <div class="brand-title">港區 AI 攝影機規劃工具 <span class="tiny">v0.9 Phase 5.1</span></div>
         <div class="brand-subtitle">Camera planning · spherical-v1 · Leaflet</div>
       </div>
       <div class="project-meta"><span class="project-name" id="projectName">Untitled project</span><span class="dirty-badge" id="dirtyState">Clean baseline</span></div>
@@ -99,6 +99,32 @@
       </aside>
 
     </div>
+
+    <div class="modal-backdrop" id="projectSettingsModal" role="presentation" hidden>
+      <section class="settings-dialog" id="projectSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="projectSettingsTitle" aria-describedby="projectSettingsDescription">
+        <div class="panel-header settings-dialog-header"><div><h2 id="projectSettingsTitle">Project Settings</h2><div class="subline" id="projectSettingsDescription">Camera Defaults · browser-local settings</div></div><button class="panel-close" id="projectSettingsClose" type="button" aria-label="關閉 Project Settings">×</button></div>
+        <div class="settings-dialog-scroll">
+          <div class="settings-accordion">
+            <section class="settings-accordion-item">
+              <h3 class="settings-accordion-heading"><button class="settings-accordion-toggle" id="projectCameraAccordionToggle" type="button" data-settings-accordion="camera" aria-expanded="true" aria-controls="projectCameraAccordionPanel"><span>Camera</span><span class="settings-accordion-icon" aria-hidden="true"></span></button></h3>
+              <div class="settings-accordion-panel" id="projectCameraAccordionPanel" role="region" aria-labelledby="projectCameraAccordionToggle">
+                <section class="panel-section"><div class="field-grid"><div class="field"><label class="field-label" for="projectCameraHeight">Camera height</label><div class="input-suffix"><input class="field-control" id="projectCameraHeight" type="number" step="0.1" min="0" /><span>m</span></div></div><div class="field"><label class="field-label" for="projectCameraTilt">Tilt (+ downward)</label><div class="input-suffix"><input class="field-control" id="projectCameraTilt" type="number" step="0.1" /><span>°</span></div></div></div></section>
+                <section class="panel-section"><div class="field"><label class="field-label" for="projectSensorFormat">Sensor format</label><select class="field-control" id="projectSensorFormat"><option value="1/4">1/4&quot;</option><option value="1/3">1/3&quot;</option><option value="1/2.8">1/2.8&quot;</option><option value="1/2.5">1/2.5&quot;</option><option value="1/2">1/2&quot;</option><option value="1/1.8">1/1.8&quot;</option><option value="1/1.7">1/1.7&quot;</option><option value="2/3">2/3&quot;</option><option value="1">1&quot;</option><option value="custom">Custom</option></select></div><div class="field-grid"><div class="field"><label class="field-label" for="projectSensorW">Active width</label><div class="input-suffix"><input class="field-control" id="projectSensorW" type="number" step="0.01" min="0" /><span>mm</span></div></div><div class="field"><label class="field-label" for="projectSensorH">Active height</label><div class="input-suffix"><input class="field-control" id="projectSensorH" type="number" step="0.01" min="0" /><span>mm</span></div></div></div></section>
+                <section class="panel-section"><div class="field"><label class="field-label" for="projectResolutionPreset">Resolution</label><select class="field-control" id="projectResolutionPreset"><option value="640x480">VGA — 640 × 480</option><option value="1280x720">720p — 1280 × 720</option><option value="1920x1080">1080p — 1920 × 1080</option><option value="2304x1296">3MP — 2304 × 1296</option><option value="2560x1440">1440p — 2560 × 1440</option><option value="2880x1620">5MP — 2880 × 1620</option><option value="3840x2160">4K — 3840 × 2160</option><option value="4096x2160">DCI 4K — 4096 × 2160</option><option value="custom">Custom</option></select></div><div class="field-grid"><div class="field"><label class="field-label" for="projectResW">Image width</label><input class="field-control" id="projectResW" type="number" min="1" /></div><div class="field"><label class="field-label" for="projectResH">Image height</label><input class="field-control" id="projectResH" type="number" min="1" /></div></div></section>
+                <section class="panel-section"><div class="field"><label class="field-label" for="projectFocal">Focal length</label><div class="input-suffix"><input class="field-control" id="projectFocal" type="number" step="0.1" min="0" /><span>mm</span></div></div></section>
+                <div class="settings-dialog-actions"><button class="action-button" id="projectUseSelectedCamera" type="button">Use Selected Camera</button><button class="action-button" id="projectRestoreFactory" type="button">Restore Factory Defaults</button></div>
+              </div>
+            </section>
+            <section class="settings-accordion-item">
+              <h3 class="settings-accordion-heading"><button class="settings-accordion-toggle" id="projectTargetAccordionToggle" type="button" data-settings-accordion="target" aria-expanded="false" aria-controls="projectTargetAccordionPanel"><span>Target</span><span class="settings-accordion-icon" aria-hidden="true"></span></button></h3>
+              <div class="settings-accordion-panel" id="projectTargetAccordionPanel" role="region" aria-labelledby="projectTargetAccordionToggle" hidden><p class="settings-accordion-description">Target Defaults are reserved for a future phase. This Phase 5.1 fix does not add Target Defaults storage or editable Target fields.</p></div>
+            </section>
+          </div>
+          <div class="form-error" id="projectSettingsError" role="alert"></div><div class="tiny" id="projectSettingsStatus" role="status" aria-live="polite"></div>
+        </div>
+        <div class="settings-dialog-footer"><button class="action-button" id="projectSettingsCancel" type="button">Cancel</button><button class="action-button primary" id="projectSaveDefaults" type="button">Save Defaults</button></div>
+      </section>
+    </div>
   </div>
 
 
@@ -107,6 +133,7 @@
   <script src="./portcam-map.js"></script>
   <script src="./portcam-comparison.js"></script>
   <script src="./portcam-yolo-coverage.js"></script>
+  <script src="./portcam-camera-defaults.js"></script>
   <script src="./leaflet/leaflet.js"></script>
   <script src="./portcam-ui.js"></script>
   <script>
@@ -115,8 +142,12 @@
       if (typeof L === 'undefined') { mapError.style.display = 'grid'; return; }
       const map = L.map('map', {zoomControl: false, scrollWheelZoom: false}).setView([22.6108, 120.2890], 13);
       L.control.zoom({position: 'bottomleft'}).addTo(map);
-      const store = window.PortCamStore.createProjectStore(window.PortCamUI.defaultProject());
-      const controller = window.PortCamUI.createAppController({store, map, leaflet: L, root: document.getElementById('appShell')});
+      let storage = null;
+      try { storage = window.localStorage; } catch (error) { storage = {getItem() { throw error; }, setItem() { throw error; }}; }
+      const cameraDefaultsRepository = window.PortCamCameraDefaults.createRepository({storage});
+      const loadedDefaults = cameraDefaultsRepository.read();
+      const store = window.PortCamStore.createProjectStore(window.PortCamUI.defaultProject({cameraDefaults: loadedDefaults.defaults}));
+      const controller = window.PortCamUI.createAppController({store, map, leaflet: L, root: document.getElementById('appShell'), cameraDefaultsRepository});
       window.mapForTest = map;
       window.appControllerForTest = controller;
     })();

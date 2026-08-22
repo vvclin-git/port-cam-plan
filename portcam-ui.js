@@ -4,15 +4,17 @@
     root.PortCamCore || (typeof require === 'function' ? require('./portcam-core.js') : null),
     root.PortCamMap || (typeof require === 'function' ? require('./portcam-map.js') : null),
     root.PortCamComparison || (typeof require === 'function' ? require('./portcam-comparison.js') : null),
-    root.PortCamYoloCoverage || (typeof require === 'function' ? require('./portcam-yolo-coverage.js') : null)
+    root.PortCamYoloCoverage || (typeof require === 'function' ? require('./portcam-yolo-coverage.js') : null),
+    root.PortCamCameraDefaults || (typeof require === 'function' ? require('./portcam-camera-defaults.js') : null)
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamUI = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults) {
   'use strict';
   if (!Core) throw new Error('PortCamUI requires PortCamCore');
   if (!Comparison) throw new Error('PortCamUI requires PortCamComparison');
   if (!YoloCoverage) throw new Error('PortCamUI requires PortCamYoloCoverage');
+  if (!CameraDefaults) throw new Error('PortCamUI requires PortCamCameraDefaults');
 
   const CAMERA_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#a16207'];
   const TILE_PADDING = 1;
@@ -27,8 +29,7 @@
     '3840x2160': {w: 3840, h: 2160}, '4096x2160': {w: 4096, h: 2160}
   };
   const DEFAULT_CAMERA = {
-    sensorWidthMm: 7.2, sensorHeightMm: 4.05, widthPx: 2560, heightPx: 1440,
-    focalLengthMm: 147.5, heightM: 20, headingDeg: 90, tiltDownDeg: 2
+    ...CameraDefaults.FACTORY_DEFAULTS, headingDeg: 90
   };
   const tileSourceByKey = {
     osm: {id: 'osm', name: 'OpenStreetMap', type: 'xyz', urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', crs: 'EPSG:3857', tileSizePx: 256, minZoom: 0, maxZoom: 19, urlCoordinateOrder: 'z-x-y', networkRequired: true, attribution: '© OpenStreetMap contributors'},
@@ -44,11 +45,14 @@
   function fmtDeg(value) { return Number.isFinite(value) ? `${value.toFixed(2)}°` : '—'; }
   function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[char])); }
   function cameraColor(camera, order) { return camera.color || CAMERA_COLORS[Math.max(0, order.indexOf(camera.id)) % CAMERA_COLORS.length]; }
-  function defaultProject() {
+  function defaultProject(options) {
+    const cameraDefaults = options?.cameraDefaults && CameraDefaults.validateDefaults(options.cameraDefaults).ok
+      ? clone(options.cameraDefaults)
+      : CameraDefaults.FACTORY_DEFAULTS;
     return {
       name: 'Untitled project',
       settings: {planningTargetHeightM: 2, baseMapKey: 'osm', tileZoom: 18, surfaceVisible: true, coverageTargetDimension: 'short'},
-      cameras: [{id: 'camera-a', name: 'Camera A', color: CAMERA_COLORS[0], position: {latitudeDeg: 22.6082, longitudeDeg: 120.2824}, ...DEFAULT_CAMERA}],
+      cameras: [{id: 'camera-a', name: 'Camera A', color: CAMERA_COLORS[0], position: {latitudeDeg: 22.6082, longitudeDeg: 120.2824}, ...cameraDefaults, headingDeg: DEFAULT_CAMERA.headingDeg}],
       targets: []
     };
   }
@@ -70,6 +74,7 @@
     const doc = rootElement.ownerDocument || rootElement;
     const view = doc.defaultView || (typeof window !== 'undefined' ? window : root);
     const $ = id => doc.getElementById(id);
+    const cameraDefaultsRepository = args.cameraDefaultsRepository || CameraDefaults.createRepository({storage: args.cameraDefaultsStorage || null, factoryDefaults: args.cameraDefaults || CameraDefaults.FACTORY_DEFAULTS});
     const L = args.leaflet || root.L;
     const map = args.map;
     const mapLayers = args.baseMapLayers || createTileLayers(L, map);
@@ -93,7 +98,14 @@
     let legendPositionUserSet = false;
     let legendDrag = null;
     let pendingCameraPlacement = null;
+    let cameraPlacementDefaultsSnapshot = null;
     let headingDrag = null;
+    let projectSettingsOpen = false;
+    let projectSettingsDraft = null;
+    let projectSettingsSensorMode = null;
+    let projectSettingsResolutionMode = null;
+    let projectSettingsAccordion = {camera: true, target: false};
+    let projectSettingsRestoreFocus = null;
     const labelVisibility = {camera: true, target: true};
 
     const els = {
@@ -110,6 +122,8 @@
       tileZoomSelect: $('tileZoomSelect'), tileZoomHelp: $('tileZoomHelp'),
       cameraLabelsToggle: $('cameraLabelsToggle'), targetLabelsToggle: $('targetLabelsToggle'),
       targetFormError: $('targetFormError'), exportState: $('exportState'), exportError: $('exportError'), headingScrubber: $('headingScrubber')
+      ,projectSettingsModal: $('projectSettingsModal'), projectSettingsDialog: $('projectSettingsDialog'), projectSettingsClose: $('projectSettingsClose')
+      ,projectSettingsError: $('projectSettingsError'), projectSettingsStatus: $('projectSettingsStatus')
     };
 
     function listen(target, event, handler, options) {
@@ -127,6 +141,112 @@
       element.value = value == null ? '' : String(value);
     }
     function setChecked(element, value) { if (element && doc.activeElement !== element) element.checked = Boolean(value); }
+    const projectSettingsFieldMap = {
+      projectCameraHeight: 'heightM', projectCameraTilt: 'tiltDownDeg', projectSensorW: 'sensorWidthMm', projectSensorH: 'sensorHeightMm',
+      projectResW: 'widthPx', projectResH: 'heightPx', projectFocal: 'focalLengthMm'
+    };
+    function cameraDefaultsFromCamera(camera) {
+      if (!camera) return null;
+      const defaults = {};
+      CameraDefaults.FIELDS.forEach(field => { defaults[field] = camera[field]; });
+      return defaults;
+    }
+    function projectSettingsDefaultsFromForm() {
+      const value = {};
+      Object.entries(projectSettingsFieldMap).forEach(([id, field]) => { value[field] = num($(id)?.value); });
+      return value;
+    }
+    function sensorPresetKey(defaults) { return Object.keys(SENSOR_PRESETS).find(key => Math.abs(defaults.sensorWidthMm - SENSOR_PRESETS[key].w) < .001 && Math.abs(defaults.sensorHeightMm - SENSOR_PRESETS[key].h) < .001) || 'custom'; }
+    function resolutionPresetKey(defaults) { return Object.keys(RESOLUTION_PRESETS).find(key => defaults.widthPx === RESOLUTION_PRESETS[key].w && defaults.heightPx === RESOLUTION_PRESETS[key].h) || 'custom'; }
+    function syncProjectSettingsForm(defaults) {
+      if (!defaults) return;
+      Object.entries(projectSettingsFieldMap).forEach(([id, field]) => setValue($(id), defaults[field]));
+      const sensorKey = projectSettingsSensorMode || sensorPresetKey(defaults);
+      const resolutionKey = projectSettingsResolutionMode || resolutionPresetKey(defaults);
+      setValue($('projectSensorFormat'), sensorKey); setValue($('projectResolutionPreset'), resolutionKey);
+      const customSensor = sensorKey === 'custom', customResolution = resolutionKey === 'custom';
+      if ($('projectSensorW')) $('projectSensorW').readOnly = !customSensor;
+      if ($('projectSensorH')) $('projectSensorH').readOnly = !customSensor;
+      if ($('projectResW')) $('projectResW').readOnly = !customResolution;
+      if ($('projectResH')) $('projectResH').readOnly = !customResolution;
+    }
+    function setProjectSettingsError(message) { if (els.projectSettingsError) els.projectSettingsError.textContent = message || ''; }
+    function updateProjectSettingsDraftFromForm() { if (projectSettingsOpen) projectSettingsDraft = projectSettingsDefaultsFromForm(); }
+    function applyProjectSensorPreset() {
+      const key = $('projectSensorFormat')?.value || 'custom';
+      const preset = SENSOR_PRESETS[key];
+      projectSettingsSensorMode = preset ? key : 'custom';
+      if (preset) { if ($('projectSensorW')) $('projectSensorW').value = preset.w.toFixed(2); if ($('projectSensorH')) $('projectSensorH').value = preset.h.toFixed(2); }
+      updateProjectSettingsDraftFromForm();
+      if ($('projectSensorW')) $('projectSensorW').readOnly = Boolean(preset);
+      if ($('projectSensorH')) $('projectSensorH').readOnly = Boolean(preset);
+    }
+    function applyProjectResolutionPreset() {
+      const key = $('projectResolutionPreset')?.value || 'custom';
+      const preset = RESOLUTION_PRESETS[key];
+      projectSettingsResolutionMode = preset ? key : 'custom';
+      if (preset) { if ($('projectResW')) $('projectResW').value = preset.w; if ($('projectResH')) $('projectResH').value = preset.h; }
+      updateProjectSettingsDraftFromForm();
+      if ($('projectResW')) $('projectResW').readOnly = Boolean(preset);
+      if ($('projectResH')) $('projectResH').readOnly = Boolean(preset);
+    }
+    function renderProjectSettingsAccordion() {
+      const controls = {camera: $('projectCameraAccordionToggle'), target: $('projectTargetAccordionToggle')};
+      const panels = {camera: $('projectCameraAccordionPanel'), target: $('projectTargetAccordionPanel')};
+      Object.keys(controls).forEach(key => {
+        const expanded = projectSettingsAccordion[key] === true;
+        controls[key]?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (panels[key]) panels[key].hidden = !expanded;
+      });
+    }
+    function renderProjectSettings() {
+      if (!els.projectSettingsModal) return;
+      els.projectSettingsModal.hidden = !projectSettingsOpen;
+      els.projectSettingsModal.setAttribute('aria-hidden', projectSettingsOpen ? 'false' : 'true');
+      if (!projectSettingsOpen) return;
+      renderProjectSettingsAccordion();
+      syncProjectSettingsForm(projectSettingsDraft);
+      const status = cameraDefaultsRepository.getStatus();
+      if (status.error && els.projectSettingsError && !els.projectSettingsError.textContent) {
+        els.projectSettingsError.textContent = `無法讀取本機 Camera Defaults，已使用 Factory Defaults。${status.error.message} 請確認瀏覽器網站資料權限後重試。`;
+      }
+    }
+    function openProjectSettings() {
+      cancelPlacementInteraction();
+      projectSettingsRestoreFocus = doc.activeElement;
+      projectSettingsDraft = cameraDefaultsRepository.getDefaults();
+      projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft);
+      projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft);
+      projectSettingsAccordion = {camera: true, target: false};
+      projectSettingsOpen = true;
+      setProjectSettingsError('');
+      if (els.projectSettingsStatus) els.projectSettingsStatus.textContent = '';
+      renderProjectSettings();
+      const focus = () => { const first = $('projectCameraHeight') || els.projectSettingsClose; first?.focus?.({preventScroll: true}); };
+      (view.requestAnimationFrame || (callback => view.setTimeout(callback, 0)))(focus);
+    }
+    function closeProjectSettings({restoreFocus = true} = {}) {
+      if (!projectSettingsOpen) return;
+      projectSettingsOpen = false; projectSettingsDraft = null; projectSettingsSensorMode = null; projectSettingsResolutionMode = null; renderProjectSettings();
+      const focus = projectSettingsRestoreFocus;
+      projectSettingsRestoreFocus = null;
+      if (restoreFocus && focus?.isConnected && typeof focus.focus === 'function') focus.focus({preventScroll: true});
+    }
+    function saveProjectSettings() {
+      const result = cameraDefaultsRepository.save(projectSettingsDefaultsFromForm());
+      if (!result.ok) {
+        setProjectSettingsError(`Camera Defaults 儲存失敗：${result.error.message} 原本已儲存值已保留；請修正欄位或確認瀏覽器網站資料權限後再試。`);
+        return false;
+      }
+      closeProjectSettings();
+      return true;
+    }
+    function useSelectedCameraForProjectSettings() {
+      const defaults = cameraDefaultsFromCamera(selectedCamera());
+      const checked = CameraDefaults.validateDefaults(defaults);
+      if (!checked.ok) { setProjectSettingsError(`選取的 Camera 參數無法套用：${checked.error}`); return; }
+      projectSettingsDraft = checked.value; projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft); projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft); setProjectSettingsError(''); syncProjectSettingsForm(projectSettingsDraft);
+    }
     function scheduleInvalidate() {
       if (!map || !map.invalidateSize) return;
       clearTimeout(resizeTimer);
@@ -251,7 +371,8 @@
       const metrics = computeMetrics(camera, state);
       const metricValues = metrics && !metrics.error ? {pixelPitch: `${(metrics.optics.pixelPitchMm * 1000).toFixed(2)} µm`, hfov: fmtDeg(metrics.optics.horizontalFovDeg), vfov: fmtDeg(metrics.optics.verticalFovDeg), horizon: `${metrics.horizon.distanceKm.toFixed(2)} km`, nearR: fmtM(metrics.envelope.nearDistanceM), farR: fmtM(metrics.envelope.farDistanceM)} : {pixelPitch: '—', hfov: '—', vfov: '—', horizon: '—', nearR: '—', farR: '—'};
       Object.entries(metricValues).forEach(([id, value]) => { const element = $(id); if (element) element.textContent = value; });
-      ['fitCamera', 'fitFov', 'resetCamera'].forEach(id => { const element = $(id); if (element) element.disabled = !camera; });
+      ['fitCamera', 'fitFov'].forEach(id => { const element = $(id); if (element) element.disabled = !camera; });
+      if ($('resetCamera')) $('resetCamera').disabled = !camera || camera.locked === true;
       ['duplicateCamera', 'renameCamera', 'deleteCamera', 'downloadCameraScene', 'copyCameraScene'].forEach(id => { const element = $(id); if (element) element.disabled = !camera; });
       if ($('lockedHint')) $('lockedHint').textContent = camera?.locked ? 'Camera 已鎖定；先解除鎖定才能修改位置或計算參數。' : '';
       if ($('inspectorEmpty')) $('inspectorEmpty').hidden = Boolean(camera);
@@ -676,6 +797,7 @@
 
     function clearPendingCameraPlacement() {
       pendingCameraPlacement = null;
+      cameraPlacementDefaultsSnapshot = null;
       mapController?.clearCameraPlacementPreview?.();
     }
     function setInteractionMode(mode) {
@@ -689,13 +811,14 @@
       leaveFocusMapMode();
       clearPendingCameraPlacement();
       store.cancelPreview();
+      cameraPlacementDefaultsSnapshot = cameraDefaultsRepository.getDefaults();
       store.setObjectManagerTab('cameras');
       store.setInteractionMode('place-camera');
       renderInteraction(store.getState());
     }
-    function cameraPlacementDraft(anchor) {
+    function cameraPlacementDraft(anchor, cameraDefaults) {
       const state = store.getState();
-      return {name: `Camera ${state.cameraOrder.length + 1}`, ...DEFAULT_CAMERA, color: CAMERA_COLORS[state.cameraOrder.length % CAMERA_COLORS.length], position: {latitudeDeg: anchor.latitudeDeg, longitudeDeg: anchor.longitudeDeg}, lifecycle: 'placed', visible: true, enabled: true, locked: false};
+      return {name: `Camera ${state.cameraOrder.length + 1}`, ...cameraDefaults, headingDeg: DEFAULT_CAMERA.headingDeg, color: CAMERA_COLORS[state.cameraOrder.length % CAMERA_COLORS.length], position: {latitudeDeg: anchor.latitudeDeg, longitudeDeg: anchor.longitudeDeg}, lifecycle: 'placed', visible: true, enabled: true, locked: false};
     }
     function placementDistancePx(anchor, latlng, originalEvent) {
       if (!map || !originalEvent || !map.mouseEventToContainerPoint || !map.latLngToContainerPoint || !L?.latLng) return Infinity;
@@ -705,7 +828,7 @@
     }
     function beginCameraDirection(latlng) {
       const anchor = {latitudeDeg: Number(latlng.lat), longitudeDeg: Number(latlng.lng)};
-      pendingCameraPlacement = {step: 'direction', anchor, headingDeg: DEFAULT_CAMERA.headingDeg, cameraDraft: cameraPlacementDraft(anchor)};
+      pendingCameraPlacement = {step: 'direction', anchor, headingDeg: DEFAULT_CAMERA.headingDeg, cameraDraft: cameraPlacementDraft(anchor, cameraPlacementDefaultsSnapshot || cameraDefaultsRepository.getDefaults())};
       mapController.setCameraPlacementPreview?.(pendingCameraPlacement.cameraDraft);
       renderInteraction(store.getState());
       setStatus('Step 2 of 2 · Point the Camera and click to confirm');
@@ -760,7 +883,7 @@
 
     function render(state) {
       if (destroyed) return;
-      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContextInspector(state); renderWorkspace(state); renderMapSettings(state); renderMapFovControl(state); renderMapLegend(state); renderInteraction(state); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(state);
+      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContextInspector(state); renderWorkspace(state); renderMapSettings(state); renderMapFovControl(state); renderMapLegend(state); renderInteraction(state); renderProjectSettings(); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(state);
     }
     const unsubscribe = store.subscribe(render);
 
@@ -802,7 +925,7 @@
     }
     function onCameraRailKeydown(event) { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-entity-id]')) { event.preventDefault(); closeOverflowMenu(); store.cancelPreview(); if (event.target.dataset.entityKind === 'camera') store.selectCamera(event.target.dataset.entityId); else store.selectTarget(event.target.dataset.entityId); showDetails(event.target.dataset.entityKind,event.target.dataset.entityId); } }
     function onOverflowClick(event) { const option = event.target.closest?.('[data-overflow-action]'); if (!option) return; event.stopPropagation(); const {entityKind: kind, entityId: id, overflowAction: verb} = option.dataset; closeOverflowMenu(); performEntityAction(kind, id, verb); }
-    function onInspectorClick(event) { const button = event.target.closest?.('button'); if (!button) return; const id = button.id; const state = store.getState(); const camera = selectedCamera(state), target = selectedTarget(state); if (id === 'closeInspector') return closeInspector(); if (id === 'fitCamera') return camera && mapController.fitCamera?.(camera.id); if (id === 'fitFov') return camera && mapController.fitCameraFov?.(camera.id); if (id === 'duplicateCamera') { if (camera) { store.duplicateCamera(camera.id); store.setInspectorTab('details'); } return; } if (id === 'renameCamera') { if (camera) { const next = view.prompt('Camera 名稱', camera.name || 'Camera'); if (next && next.trim()) store.patchCamera(camera.id, {name: next.trim()}, 'camera-rename'); } return; } if (id === 'deleteCamera') { if (camera && view.confirm(`刪除 ${camera.name || camera.id}？`)) store.removeCamera(camera.id); return; } if (id === 'resetCamera') { if (camera && !camera.locked) store.patchCamera(camera.id, {...DEFAULT_CAMERA}, 'camera-reset'); return; } if (id === 'fitTarget') return target && mapController.fitTarget?.(target.id); if (id === 'fitCameraTarget') return camera && target && mapController.fitCameraAndTarget?.(camera.id,target.id); if (id === 'duplicateTarget') { if (target) { store.duplicateTarget(target.id); store.setInspectorTab('details'); } return; } if (id === 'renameTarget') { if (target) { const next=view.prompt('Target 名稱',target.name||'Target'); if(next&&next.trim())store.patchTarget(target.id,{name:next.trim()},'target-rename'); } return; } if (id === 'deleteTarget' && target && view.confirm(`刪除 ${target.name||target.id}？`)) { store.removeTarget(target.id); store.setInspectorTab('details'); return; } if (id === 'downloadCameraScene') return downloadScene(); if (id === 'copyCameraScene') return copyScene(); }
+    function onInspectorClick(event) { const button = event.target.closest?.('button'); if (!button) return; const id = button.id; const state = store.getState(); const camera = selectedCamera(state), target = selectedTarget(state); if (id === 'closeInspector') return closeInspector(); if (id === 'fitCamera') return camera && mapController.fitCamera?.(camera.id); if (id === 'fitFov') return camera && mapController.fitCameraFov?.(camera.id); if (id === 'duplicateCamera') { if (camera) { store.duplicateCamera(camera.id); store.setInspectorTab('details'); } return; } if (id === 'renameCamera') { if (camera) { const next = view.prompt('Camera 名稱', camera.name || 'Camera'); if (next && next.trim()) store.patchCamera(camera.id, {name: next.trim()}, 'camera-rename'); } return; } if (id === 'deleteCamera') { if (camera && view.confirm(`刪除 ${camera.name || camera.id}？`)) store.removeCamera(camera.id); return; } if (id === 'resetCamera') { if (camera && !camera.locked) store.patchCamera(camera.id, cameraDefaultsRepository.getDefaults(), 'camera-reset'); return; } if (id === 'fitTarget') return target && mapController.fitTarget?.(target.id); if (id === 'fitCameraTarget') return camera && target && mapController.fitCameraAndTarget?.(camera.id,target.id); if (id === 'duplicateTarget') { if (target) { store.duplicateTarget(target.id); store.setInspectorTab('details'); } return; } if (id === 'renameTarget') { if (target) { const next=view.prompt('Target 名稱',target.name||'Target'); if(next&&next.trim())store.patchTarget(target.id,{name:next.trim()},'target-rename'); } return; } if (id === 'deleteTarget' && target && view.confirm(`刪除 ${target.name||target.id}？`)) { store.removeTarget(target.id); store.setInspectorTab('details'); return; } if (id === 'downloadCameraScene') return downloadScene(); if (id === 'copyCameraScene') return copyScene(); }
     function activateWorkspaceCamera(id, workspaceTab, selector) {
       const camera = store.getCamera(id);
       if (!camera || camera.enabled === false) return;
@@ -838,14 +961,47 @@
       const workspaceTab = event.target.closest?.('[data-workspace-tab]');
       if (workspaceTab) { store.setActiveWorkspaceTab(workspaceTab.dataset.workspaceTab); return; }
       if (event.target.closest?.('#workspaceToggle')) { setPanel('workspace', !(store.getState().uiState.panelOpen.workspace)); return; }
-      if (event.target.closest?.('#mapSettingsToggle') || event.target.closest?.('#openProjectSettings')) { setPanel('mapSettings', !(store.getState().uiState.panelOpen.mapSettings)); return; }
+      if (event.target.closest?.('#openProjectSettings')) { openProjectSettings(); return; }
+      if (event.target.closest?.('#mapSettingsToggle')) { setPanel('mapSettings', !(store.getState().uiState.panelOpen.mapSettings)); return; }
       if (event.target.closest?.('#closeMapSettings')) { setPanel('mapSettings', false); return; }
     }
     function onGlobalClick(event) { if (overflowMenu && !event.target.closest?.('.manager-overflow-menu, [data-entity-overflow]')) closeOverflowMenu(); if (els.mapSettingsPopover && !els.mapSettingsPopover.hidden && !event.target.closest?.('#mapSettingsAnchor')) setPanel('mapSettings', false); }
+    function onProjectSettingsClick(event) {
+      if (event.target === els.projectSettingsModal) return closeProjectSettings();
+      const button = event.target.closest?.('button');
+      if (!button) return;
+      const accordionKey = button.dataset.settingsAccordion;
+      if (accordionKey && Object.prototype.hasOwnProperty.call(projectSettingsAccordion, accordionKey)) {
+        projectSettingsAccordion[accordionKey] = !projectSettingsAccordion[accordionKey];
+        renderProjectSettings();
+        return;
+      }
+      if (button.id === 'projectSettingsClose' || button.id === 'projectSettingsCancel') return closeProjectSettings();
+      if (button.id === 'projectUseSelectedCamera') return useSelectedCameraForProjectSettings();
+      if (button.id === 'projectRestoreFactory') { projectSettingsDraft = cameraDefaultsRepository.factoryDefaults(); projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft); projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft); setProjectSettingsError(''); syncProjectSettingsForm(projectSettingsDraft); return; }
+      if (button.id === 'projectSaveDefaults') return saveProjectSettings();
+    }
     function cancelPlacementInteraction() { clearPendingCameraPlacement(); store.cancelPreview(); if (store.getState().uiState.interactionMode !== 'navigate') store.setInteractionMode('navigate'); renderInteraction(store.getState()); }
-    function onKeydown(event) { if (event.key !== 'Escape') return; if (legendDrag && cancelLegendDrag()) { event.preventDefault(); event.stopPropagation(); return; } if (headingDrag && finishHeadingDrag(false)) { event.preventDefault(); event.stopPropagation(); return; } if (overflowMenu) { closeOverflowMenu({restoreFocus: true}); return; } const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { event.preventDefault(); cancelPlacementInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); if (state.uiState.focusMapMode) { event.preventDefault(); store.setFocusMapMode(false); return; } if (state.uiState.focusedEntity) { event.preventDefault(); store.clearFocusedEntity(); closeInspector(); return; } const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector(); }
-    function onInput(event) { const element = event.target; if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
-    function onChange(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
+    function onKeydown(event) {
+      if (projectSettingsOpen) {
+        if (event.key === 'Escape') { event.preventDefault(); closeProjectSettings(); return; }
+        if (event.key === 'Tab') {
+          const focusable = Array.from(els.projectSettingsDialog?.querySelectorAll?.('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') || []).filter(element => !element.hidden && element.offsetParent !== null);
+          if (!focusable.length) { event.preventDefault(); return; }
+          const current = focusable.indexOf(doc.activeElement);
+          const next = event.shiftKey ? (current <= 0 ? focusable.length - 1 : current - 1) : (current === focusable.length - 1 ? 0 : current + 1);
+          event.preventDefault(); focusable[next].focus();
+        }
+        return;
+      }
+      if (event.key !== 'Escape') return;
+      if (legendDrag && cancelLegendDrag()) { event.preventDefault(); event.stopPropagation(); return; }
+      if (headingDrag && finishHeadingDrag(false)) { event.preventDefault(); event.stopPropagation(); return; }
+      if (overflowMenu) { closeOverflowMenu({restoreFocus: true}); return; }
+      const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { event.preventDefault(); cancelPlacementInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); if (state.uiState.focusMapMode) { event.preventDefault(); store.setFocusMapMode(false); return; } if (state.uiState.focusedEntity) { event.preventDefault(); store.clearFocusedEntity(); closeInspector(); return; } const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector();
+    }
+    function onInput(event) { const element = event.target; if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
+    function onChange(event) { const element = event.target; if (element.id === 'projectSensorFormat') return applyProjectSensorPreset(); if (element.id === 'projectResolutionPreset') return applyProjectResolutionPreset(); if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
     function onEnter(event) { if (event.key === 'Enter') { const element = event.target; if (element.dataset.cameraField) { event.preventDefault(); commitCameraField(element.dataset.cameraField); } if (element.dataset.targetField) { event.preventDefault(); commitTargetField(element.dataset.targetField); } } }
     function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); }
@@ -853,7 +1009,7 @@
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraRailItems, 'scroll', () => closeOverflowMenu()); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
     listen(els.mapLegend, 'pointerdown', onLegendPointerDown); listen(els.mapLegend, 'pointermove', onLegendPointerMove); listen(els.mapLegend, 'pointerup', onLegendPointerUp); listen(els.mapLegend, 'pointercancel', onLegendPointerUp); listen(els.mapLegend, 'click', onLegendClick); listen(els.mapLegend, 'keydown', onLegendKeydown);
     listen(els.headingScrubber, 'pointerdown', onHeadingPointerDown); listen(els.headingScrubber, 'pointermove', onHeadingPointerMove); listen(els.headingScrubber, 'pointerup', onHeadingPointerUp); listen(els.headingScrubber, 'pointercancel', onHeadingPointerUp); listen(els.headingScrubber, 'keydown', onHeadingKeydown);
-    listen(els.inspector, 'click', onInspectorClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
+    listen(els.inspector, 'click', onInspectorClick); listen(els.projectSettingsModal, 'click', onProjectSettingsClick); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter);
     listen($('addCamera'), 'click', beginCameraPlacement);
     listen($('addTargetManager'), 'click', () => { setInteractionMode('place-target'); });
     listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo());
@@ -863,7 +1019,7 @@
     render(store.getState());
     scheduleInvalidate();
 
-    const publicApi = {store, mapController, render, destroy() { if (destroyed) return; destroyed = true; pendingCameraPlacement = null; finishLegendDrag(); closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); if (legendClampFrame != null && view.cancelAnimationFrame) view.cancelAnimationFrame(legendClampFrame); legendClampFrame = null; mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
+    const publicApi = {store, mapController, cameraDefaultsRepository, render, openProjectSettings, closeProjectSettings, destroy() { if (destroyed) return; destroyed = true; pendingCameraPlacement = null; cameraPlacementDefaultsSnapshot = null; closeProjectSettings({restoreFocus: false}); finishLegendDrag(); closeOverflowMenu(); unsubscribe(); listeners.splice(0).forEach(cleanup => cleanup()); resizeObserver?.disconnect(); clearTimeout(resizeTimer); if (legendClampFrame != null && view.cancelAnimationFrame) view.cancelAnimationFrame(legendClampFrame); legendClampFrame = null; mapController.destroy(); if (surfaceLayer && map?.hasLayer?.(surfaceLayer)) map.removeLayer(surfaceLayer); }, buildCameraScene, serializeCameraScene() { return JSON.stringify(buildCameraScene(), null, 2); }, classifySurfacePoint, pointInGeometry};
     const testWindow = view || root; testWindow.projectStoreForTest = store; testWindow.mapControllerForTest = mapController; testWindow.cameraSceneExportForTest = {buildCameraScene: publicApi.buildCameraScene, serializeCameraScene: publicApi.serializeCameraScene}; testWindow.surfaceLayerForTest = {classifySurfacePoint, pointInGeometry}; testWindow.cameraMarkerForTest = {getLatLng() { const id = selectedCameraId(); const snapshot = id && mapController.getCameraLayerSnapshot(id); return snapshot?.markerPosition && L?.latLng ? L.latLng(snapshot.markerPosition.lat, snapshot.markerPosition.lng) : snapshot?.markerPosition || null; }};
     return publicApi;
   }

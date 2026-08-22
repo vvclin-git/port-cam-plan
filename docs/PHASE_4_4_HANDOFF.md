@@ -2,8 +2,8 @@
 
 ## Status
 
-- Phase 4.4 is implemented and committed as `29b753e` (`Document Phase 4.4 UI projection and panel controls`) on `codex/multi-cam`, following the clean `fc9566a` Phase 4.3 baseline.
-- The implementation `HEAD` and `origin/codex/multi-cam` are aligned at `29b753e`; this documentation synchronization is the current uncommitted working-tree change.
+- Phase 4.4 is implemented in the committed history on `codex/multi-cam`; the live checkout was verified at `6d85dc2` (`Document Phase 4.4 controls and current implementation status`) before Phase 5.1 work began.
+- The previous `29b753e`/uncommitted documentation note was stale: the checkout was clean at that verified Phase 4.4 `HEAD`. Phase 5.1 changes are intentionally tracked in the working tree and are documented separately in [`PHASE_5_1_HANDOFF.md`](PHASE_5_1_HANDOFF.md).
 - Project/Scene schemas, Observation cache, spherical-v1 calculations, coverage formula, and public Map/Store contracts remain unchanged.
 
 ## Panel and Focus map contract
