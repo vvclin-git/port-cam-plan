@@ -323,14 +323,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 
 .entity-label { pointer-events: none !important; border: 1px solid rgba(24,34,48,.2); border-radius: 4px; padding: 2px 5px; color: var(--text); background: rgba(255,255,255,.9); box-shadow: 0 2px 7px rgba(20,34,52,.16); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .entity-marker-wrapper { border: 0 !important; background: transparent !important; }
-.target-marker { position: relative; display: block; width: 26px; height: 26px; border: 2px solid #202936; border-radius: 50%; background: rgba(255,255,255,.92); box-shadow: 0 1px 5px rgba(20,34,52,.35); }
-.target-marker::before, .target-marker::after { content: ''; position: absolute; left: 50%; top: 50%; background: #202936; transform: translate(-50%, -50%); }
-.target-marker::before { width: 16px; height: 2px; }
-.target-marker::after { width: 2px; height: 16px; }
-.target-marker.is-selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.25), 0 1px 5px rgba(20,34,52,.35); }
-.target-marker.is-selected::before, .target-marker.is-selected::after { background: var(--accent); }
-.target-marker.is-locked { border-style: dashed; }
-.target-marker.is-disabled { opacity: .48; }
+.target-marker { position:relative; display:block; width:40px; height:40px; background-image:var(--target-asset); background-position:center; background-size:contain; background-repeat:no-repeat; transform:rotate(var(--target-heading,0deg)); filter:drop-shadow(0 1px 2px rgba(20,34,52,.55)); }
+.target-marker.is-selected { filter:drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 7px rgba(37,99,235,.7)); }
+.target-marker.is-locked { outline:2px dashed #202936; outline-offset:2px; border-radius:50%; }
+.target-marker.is-disabled { opacity:.48; }
+.target-marker.is-preview { opacity:.7; }
 
 @media (min-width: 1600px) {
   .shell-body { grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--inspector-width); }

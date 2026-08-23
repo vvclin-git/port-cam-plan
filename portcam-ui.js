@@ -8,11 +8,14 @@
     root.PortCamCameraDefaults || (typeof require === 'function' ? require('./portcam-camera-defaults.js') : null),
     root.PortCamCameraPresets || (typeof require === 'function' ? require('./portcam-camera-presets.js') : null),
     root.PortCamCameraPresetTransfer || (typeof require === 'function' ? require('./portcam-camera-preset-transfer.js') : null),
-    root.PortCamProject || (typeof require === 'function' ? require('./portcam-project.js') : null)
+    root.PortCamProject || (typeof require === 'function' ? require('./portcam-project.js') : null),
+    root.PortCamTargetDefaults || (typeof require === 'function' ? require('./portcam-target-defaults.js') : null),
+    root.PortCamTargetPresets || (typeof require === 'function' ? require('./portcam-target-presets.js') : null),
+    root.PortCamTargetCatalog || (typeof require === 'function' ? require('./portcam-target-catalog.js') : null)
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamUI = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer, Project) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer, Project, TargetDefaults, TargetPresets, TargetCatalog) {
   'use strict';
   if (!Core) throw new Error('PortCamUI requires PortCamCore');
   if (!Comparison) throw new Error('PortCamUI requires PortCamComparison');
@@ -21,6 +24,7 @@
   if (!CameraPresets) throw new Error('PortCamUI requires PortCamCameraPresets');
   if (!CameraPresetTransfer) throw new Error('PortCamUI requires PortCamCameraPresetTransfer');
   if (!Project) throw new Error('PortCamUI requires PortCamProject');
+  if (!TargetDefaults || !TargetPresets || !TargetCatalog) throw new Error('PortCamUI requires Target Defaults, Presets and Catalog');
 
   const CAMERA_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#a16207'];
   const TILE_PADDING = 1;
@@ -87,6 +91,8 @@
     const view = doc.defaultView || (typeof window !== 'undefined' ? window : root);
     const $ = id => doc.getElementById(id);
     const cameraDefaultsRepository = args.cameraDefaultsRepository || CameraDefaults.createRepository({storage: args.cameraDefaultsStorage || null, factoryDefaults: args.cameraDefaults || CameraDefaults.FACTORY_DEFAULTS});
+    const targetDefaultsRepository = args.targetDefaultsRepository || TargetDefaults.createRepository({storage: args.targetDefaultsStorage || null});
+    const targetPresetsRepository = args.targetPresetsRepository || TargetPresets.createRepository({storage: args.targetPresetsStorage || null});
     const cameraPresetsRepository = args.cameraPresetsRepository || CameraPresets.createRepository({storage: args.cameraPresetsStorage || null});
     const cameraPresetCoordinator = args.cameraPresetCoordinator || CameraPresetTransfer.createCoordinator({cameraDefaultsRepository, cameraPresetsRepository});
     const L = args.leaflet || root.L;
@@ -112,6 +118,8 @@
     let legendPositionUserSet = false;
     let legendDrag = null;
     let pendingCameraPlacement = null;
+    let pendingTargetPlacement = null;
+    let targetPlacementDefaultsSnapshot = null;
     let cameraPlacementDefaultsSnapshot = null;
     let headingDrag = null;
     let projectSettingsOpen = false;
@@ -969,14 +977,14 @@
     function renderTargetForm(target, state) {
       const position = target?.position;
       setValue($('targetLat'), position?.latitudeDeg); setValue($('targetLng'), position?.longitudeDeg); setValue($('targetLong'), target?.lengthM ?? 5); setValue($('targetShort'), target?.widthM ?? 2); setValue($('targetHeight'), target?.heightM ?? state.settings.planningTargetHeightM ?? 2); setValue($('targetHeading'), target?.headingDeg ?? 0);
-      setValue($('orientation'), state.settings.coverageTargetDimension || 'short');
+      setValue($('orientation'), state.settings.coverageTargetDimension || 'short'); if ($('targetModelType')) $('targetModelType').value = target?.modelType || 'small-vessel';
       ['targetLat', 'targetLng', 'targetLong', 'targetShort', 'targetHeight', 'targetHeading'].forEach(id => { const element = $(id); if (element) element.disabled = Boolean(target?.locked); });
       if ($('createTarget')) $('createTarget').disabled = Boolean(target?.locked);
       if ($('targetFormTitle')) $('targetFormTitle').textContent = target ? 'Selected Target' : '尚未選取 Target';
       if ($('createTarget')) $('createTarget').textContent = '建立 Target';
     }
     function targetPositionFieldsMarkup() { return '<div class="field-grid"><div class="field"><label class="field-label" for="targetLat">Latitude</label><input class="field-control" id="targetLat" type="number" step="0.000001" data-target-field="targetLat" /></div><div class="field"><label class="field-label" for="targetLng">Longitude</label><input class="field-control" id="targetLng" type="number" step="0.000001" data-target-field="targetLng" /></div><div class="field"><label class="field-label" for="targetHeading">Heading</label><input class="field-control" id="targetHeading" type="number" step="0.1" data-target-field="targetHeading" /></div><div class="field"><label class="field-label">Anchor</label><input class="field-control" value="bottom-center" readonly /></div></div>'; }
-    function targetDimensionFieldsMarkup() { return '<div class="field-grid"><div class="field"><label class="field-label" for="targetLong">Length</label><input class="field-control" id="targetLong" type="number" step="0.1" data-target-field="targetLong" /></div><div class="field"><label class="field-label" for="targetShort">Width</label><input class="field-control" id="targetShort" type="number" step="0.1" data-target-field="targetShort" /></div><div class="field"><label class="field-label" for="targetHeight">Visible height</label><input class="field-control" id="targetHeight" type="number" step="0.1" data-target-field="targetHeight" /></div><div class="field"><label class="field-label" for="orientation">Coverage reference</label><select class="field-control" id="orientation"><option value="short">short side / 船寬</option><option value="long">long side / 船長</option></select></div></div>'; }
+    function targetDimensionFieldsMarkup() { return '<div class="field-grid"><div class="field"><label class="field-label" for="targetModelType">Model Type</label><select class="field-control" id="targetModelType"><option value="small-vessel">Small Tug</option><option value="large-vessel">Large Container Ship</option></select></div><div class="field"><label class="field-label" for="targetLong">Length</label><input class="field-control" id="targetLong" type="number" step="0.1" data-target-field="targetLong" /></div><div class="field"><label class="field-label" for="targetShort">Width</label><input class="field-control" id="targetShort" type="number" step="0.1" data-target-field="targetShort" /></div><div class="field"><label class="field-label" for="targetHeight">Visible height</label><input class="field-control" id="targetHeight" type="number" step="0.1" data-target-field="targetHeight" /></div><div class="field"><label class="field-label" for="orientation">Coverage reference</label><select class="field-control" id="orientation"><option value="short">short side / 船寬</option><option value="long">long side / 船長</option></select></div></div>'; }
     function targetFieldsMarkup() { return `${targetPositionFieldsMarkup()}${targetDimensionFieldsMarkup()}`; }
     function renderTargetCreation(state) { const key='target-create'; if (contextRenderKey !== key) { els.resultContent.innerHTML = `<div class="result-state neutral"><strong>尚未選取 Target</strong>請由 Object Manager 的 Add Target 放置，或輸入座標建立。</div><section class="panel-section">${targetFieldsMarkup()}<button class="action-button primary" id="createTarget" type="button" style="width:100%;margin-top:9px">建立 Target</button><div class="form-error" id="targetFormError"></div></section>`; contextRenderKey=key; } renderTargetForm(null,state); }
     function renderTargetDetails(state, target) { const key=`target:${target.id}:details`; if (contextRenderKey !== key) { els.resultContent.innerHTML = `<section class="panel-section"><button class="section-toggle" data-section-toggle="target-position" aria-expanded="true">Position &amp; Orientation</button><div class="section-body" data-section-body="target-position">${targetPositionFieldsMarkup()}</div></section><section class="panel-section"><button class="section-toggle" data-section-toggle="target-dimensions" aria-expanded="true">Dimensions &amp; Coverage</button><div class="section-body" data-section-body="target-dimensions">${targetDimensionFieldsMarkup()}</div></section><section class="panel-section"><button class="section-toggle" data-section-toggle="target-actions" aria-expanded="true">Actions</button><div class="section-body" data-section-body="target-actions"><div class="inspector-actions"><button class="action-button" id="fitTarget">Fit Target</button><button class="action-button" id="duplicateTarget">Duplicate</button><button class="action-button" id="renameTarget">Rename</button><button class="action-button danger" id="deleteTarget">Delete</button></div><div class="tiny" id="targetLockedHint"></div></div></section>`; contextRenderKey=key; } renderTargetForm(target,state); if ($('targetLockedHint')) $('targetLockedHint').textContent=target.locked?'Target 已鎖定，請從 Object Manager 解除鎖定。':''; }
@@ -1339,11 +1347,12 @@
     function applyResolutionPreset() { const key = $('resolutionPreset')?.value; const preset = RESOLUTION_PRESETS[key]; if ($('resW')) { $('resW').readOnly = !preset; if (preset) $('resW').value = preset.w; } if ($('resH')) { $('resH').readOnly = !preset; if (preset) $('resH').value = preset.h; } commitCameraForm(); }
     function targetPatchForField(field) {
       const mapFields = {targetLong: 'lengthM', targetShort: 'widthM', targetHeight: 'heightM', targetHeading: 'headingDeg'};
+      if (field === 'targetModelType') return TargetCatalog.isModelType($('targetModelType')?.value) ? {modelType:$('targetModelType').value} : null;
       if (mapFields[field]) { const value = num($(field)?.value); return value == null ? null : {[mapFields[field]]: value}; }
       if (field === 'targetLat' || field === 'targetLng') { const target = selectedTarget(); const latitudeDeg = field === 'targetLat' ? num($(field)?.value) : target?.position?.latitudeDeg; const longitudeDeg = field === 'targetLng' ? num($(field)?.value) : target?.position?.longitudeDeg; return latitudeDeg == null || longitudeDeg == null ? null : {position: {latitudeDeg, longitudeDeg}}; }
       return null;
     }
-    function commitTargetField(field) { const id = selectedTargetId(); if (!id) return; const patch = targetPatchForField(field); if (!patch) { setTargetError(`${field} 必須是有限數值。`); return; } const state = store.getState(); if (state.preview?.kind === 'target' && state.preview.id === id) store.commitPreview(`target-${field}`); else store.patchTarget(id, patch, `target-${field}`); if (field === 'targetHeight') store.patchSettings({planningTargetHeightM: patch.heightM}, 'target-height-setting'); }
+    function commitTargetField(field) { const id = selectedTargetId(); if (!id) return; const patch = targetPatchForField(field); if (!patch) { setTargetError(`${field} 必須是有限數值。`); return; } const state = store.getState(); if (state.preview?.kind === 'target' && state.preview.id === id) store.commitPreview(`target-${field}`); else store.patchTarget(id, patch, `target-${field}`); }
     function previewTargetField(field) { const id = selectedTargetId(); const patch = targetPatchForField(field); if (id && patch) store.beginPreview('target', id, patch); }
     function setTargetError(message) { const targetError = els.targetFormError || $('targetFormError'); if (targetError) targetError.textContent = message || ''; }
     function addTargetFromDraft(targetDraft) {
@@ -1359,7 +1368,7 @@
       const latitude = num($('targetLat')?.value); const longitude = num($('targetLng')?.value); const lengthM = num($('targetLong')?.value); const widthM = num($('targetShort')?.value); const heightM = num($('targetHeight')?.value); const headingDeg = num($('targetHeading')?.value);
       if (![latitude, longitude, lengthM, widthM, heightM, headingDeg].every(value => value != null)) { setTargetError('請輸入有效的 latitude、longitude、尺寸與 heading。'); return null; }
       if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || lengthM <= 0 || widthM <= 0 || heightM <= 0) { setTargetError('座標必須在合法範圍，尺寸必須大於 0。'); return null; }
-      return addTargetFromDraft({position: {latitudeDeg: latitude, longitudeDeg: longitude}, lengthM, widthM, heightM, headingDeg});
+      return addTargetFromDraft({position: {latitudeDeg: latitude, longitudeDeg: longitude}, modelType: $('targetModelType')?.value || 'small-vessel', lengthM, widthM, heightM, headingDeg});
     }
     function createTargetFromMap(latlng) {
       const state = store.getState();
@@ -1372,9 +1381,11 @@
       cameraPlacementDefaultsSnapshot = null;
       mapController?.clearCameraPlacementPreview?.();
     }
+    function clearPendingTargetPlacement() { pendingTargetPlacement = null; targetPlacementDefaultsSnapshot = null; mapController?.clearTargetPlacementPreview?.(); }
     function setInteractionMode(mode) {
       if (mode !== 'navigate') leaveFocusMapMode();
       if (mode !== 'place-camera') clearPendingCameraPlacement();
+      if (mode !== 'place-target') clearPendingTargetPlacement();
       store.cancelPreview();
       store.setInteractionMode(mode);
       renderInteraction(store.getState());
@@ -1388,6 +1399,7 @@
       store.setInteractionMode('place-camera');
       renderInteraction(store.getState());
     }
+    function beginTargetPlacement() { leaveFocusMapMode(); clearPendingTargetPlacement(); targetPlacementDefaultsSnapshot = targetDefaultsRepository.getDefaults(); store.setInteractionMode('place-target'); renderInteraction(store.getState()); }
     function cameraPlacementDraft(anchor, cameraDefaults) {
       const state = store.getState();
       return {name: `Camera ${state.cameraOrder.length + 1}`, ...cameraDefaults, headingDeg: DEFAULT_CAMERA.headingDeg, color: CAMERA_COLORS[state.cameraOrder.length % CAMERA_COLORS.length], position: {latitudeDeg: anchor.latitudeDeg, longitudeDeg: anchor.longitudeDeg}, lifecycle: 'placed', visible: true, enabled: true, locked: false};
@@ -1405,8 +1417,10 @@
       renderInteraction(store.getState());
       setStatus('Step 2 of 2 · Point the Camera and click to confirm');
     }
+    function beginTargetDirection(latlng) { const anchor={latitudeDeg:Number(latlng.lat),longitudeDeg:Number(latlng.lng)}; pendingTargetPlacement={anchor,targetDraft:{...(targetPlacementDefaultsSnapshot || targetDefaultsRepository.getDefaults()),position:anchor,headingDeg:0,lifecycle:'placed',visible:true,enabled:true,locked:false}}; mapController?.setTargetPlacementPreview?.(pendingTargetPlacement.targetDraft); setStatus('Step 2 of 2 · Point the bow and click to confirm'); }
     function handleMapMove(latlng) {
       const state = store.getState();
+      if (state.uiState.interactionMode === 'place-target' && pendingTargetPlacement?.anchor) { const headingDeg=Core.bearingBetween(pendingTargetPlacement.anchor,{latitudeDeg:Number(latlng.lat),longitudeDeg:Number(latlng.lng)}); pendingTargetPlacement.targetDraft={...pendingTargetPlacement.targetDraft,headingDeg}; mapController?.setTargetPlacementPreview?.(pendingTargetPlacement.targetDraft); return; }
       if (state.uiState.interactionMode !== 'place-camera' || !pendingCameraPlacement?.anchor) return;
       const cursor = {latitudeDeg: Number(latlng.lat), longitudeDeg: Number(latlng.lng)};
       const headingDeg = Core.bearingBetween(pendingCameraPlacement.anchor, cursor);
@@ -1431,7 +1445,7 @@
         showDetails('camera', id);
         return;
       }
-      if (state.uiState.interactionMode === 'place-target') createTargetFromMap(latlng);
+      if (state.uiState.interactionMode === 'place-target') { if (!pendingTargetPlacement) { beginTargetDirection(latlng); return; } if (placementDistancePx(pendingTargetPlacement.anchor,latlng,originalEvent)<8) { setStatus('Move the cursor at least 8 px from the Target location before confirming.'); return; } const headingDeg=Core.bearingBetween(pendingTargetPlacement.anchor,{latitudeDeg:Number(latlng.lat),longitudeDeg:Number(latlng.lng)}); const draft={...pendingTargetPlacement.targetDraft,headingDeg}; clearPendingTargetPlacement(); const id=addTargetFromDraft(draft); store.setObjectManagerTab('targets'); store.setInspectorTab('details'); showDetails('target',id); return; }
       else if (state.uiState.interactionMode === 'navigate' && !state.uiState.panelOpen.mapSettings && !legendDrag) { store.clearFocusedEntity(); closeInspector(); }
     }
     function handleCameraDrag(id, latlng) { store.beginPreview('camera', id, {position: {latitudeDeg: latlng.lat, longitudeDeg: latlng.lng}}); store.commitPreview('camera-drag'); }
@@ -1578,7 +1592,7 @@
       if (button.id === 'projectPresetImportCancel') { resetProjectImportState(); setProjectSettingsStatus('已取消匯入；尚未套用任何變更。'); renderProjectImport(); return; }
       if (button.id === 'projectSaveDefaults') return saveProjectSettings();
     }
-    function cancelPlacementInteraction() { clearPendingCameraPlacement(); store.cancelPreview(); if (store.getState().uiState.interactionMode !== 'navigate') store.setInteractionMode('navigate'); renderInteraction(store.getState()); }
+    function cancelPlacementInteraction() { clearPendingCameraPlacement(); clearPendingTargetPlacement(); store.cancelPreview(); if (store.getState().uiState.interactionMode !== 'navigate') store.setInteractionMode('navigate'); renderInteraction(store.getState()); }
     function onKeydown(event) {
       if (projectSettingsOpen) {
         if (event.key === 'Escape') { event.preventDefault(); closeProjectSettings(); return; }
@@ -1649,7 +1663,7 @@
     listen(els.headingScrubber, 'pointerdown', onHeadingPointerDown); listen(els.headingScrubber, 'pointermove', onHeadingPointerMove); listen(els.headingScrubber, 'pointerup', onHeadingPointerUp); listen(els.headingScrubber, 'pointercancel', onHeadingPointerUp); listen(els.headingScrubber, 'keydown', onHeadingKeydown);
     listen(els.inspector, 'click', onInspectorClick); listen(els.projectSettingsModal, 'click', onProjectSettingsClick); listen(els.projectPresetImportFile, 'change', event => handleProjectImportFile(event.target.files?.[0] || null)); listen(els.projectOpenFile, 'change', event => handleProjectFile(event.target.files?.[0] || null)); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter); listen(view, 'beforeunload', onBeforeUnload);
     listen($('addCamera'), 'click', beginCameraPlacement);
-    listen($('addTargetManager'), 'click', () => { setInteractionMode('place-target'); });
+    listen($('addTargetManager'), 'click', beginTargetPlacement);
     listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo());
     if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); if (els.mapWorkspace) resizeObserver.observe(els.mapWorkspace); }
     listen(view, 'resize', scheduleInvalidate);

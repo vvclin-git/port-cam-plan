@@ -164,6 +164,9 @@
   <script src="./portcam-camera-defaults.js"></script>
   <script src="./portcam-camera-presets.js"></script>
   <script src="./portcam-camera-preset-transfer.js"></script>
+  <script src="./portcam-target-catalog.js"></script>
+  <script src="./portcam-target-defaults.js"></script>
+  <script src="./portcam-target-presets.js"></script>
   <script src="./leaflet/leaflet.js"></script>
   <script src="./portcam-ui.js"></script>
   <script>
@@ -175,11 +178,13 @@
       let storage = null;
       try { storage = window.localStorage; } catch (error) { storage = {getItem() { throw error; }, setItem() { throw error; }}; }
       const cameraDefaultsRepository = window.PortCamCameraDefaults.createRepository({storage});
+      const targetDefaultsRepository = window.PortCamTargetDefaults.createRepository({storage});
+      const targetPresetsRepository = window.PortCamTargetPresets.createRepository({storage});
       const cameraPresetsRepository = window.PortCamCameraPresets.createRepository({storage});
       const cameraPresetCoordinator = window.PortCamCameraPresetTransfer.createCoordinator({cameraDefaultsRepository, cameraPresetsRepository});
       const loadedDefaults = cameraDefaultsRepository.read();
       const store = window.PortCamStore.createProjectStore(window.PortCamUI.defaultProject({cameraDefaults: loadedDefaults.defaults}));
-      const controller = window.PortCamUI.createAppController({store, map, leaflet: L, root: document.getElementById('appShell'), cameraDefaultsRepository, cameraPresetsRepository, cameraPresetCoordinator});
+      const controller = window.PortCamUI.createAppController({store, map, leaflet: L, root: document.getElementById('appShell'), cameraDefaultsRepository, cameraPresetsRepository, cameraPresetCoordinator, targetDefaultsRepository, targetPresetsRepository});
       window.mapForTest = map;
       window.appControllerForTest = controller;
     })();

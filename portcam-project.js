@@ -26,7 +26,7 @@
     'locked', 'name', 'position', 'revision', 'sensorHeightMm', 'sensorWidthMm',
     'tiltDownDeg', 'verticalDatum', 'visible', 'widthPx', 'heightPx', 'id'
   ];
-  const TARGET_FIELDS = ['anchor', 'enabled', 'headingDeg', 'heightM', 'lengthM', 'locked', 'name', 'position', 'revision', 'visible', 'widthM', 'id'];
+  const TARGET_FIELDS = ['anchor', 'enabled', 'headingDeg', 'heightM', 'lengthM', 'locked', 'modelType', 'name', 'position', 'revision', 'visible', 'widthM', 'id'];
 
   function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
   function deepFreeze(value) {
@@ -156,8 +156,10 @@
       lengthM: positive(value.lengthM, `${path}.lengthM`),
       widthM: positive(value.widthM, `${path}.widthM`),
       heightM: positive(value.heightM, `${path}.heightM`),
-      headingDeg: validateHeading(value.headingDeg, `${path}.headingDeg`)
+      headingDeg: validateHeading(value.headingDeg, `${path}.headingDeg`),
+      modelType: Object.prototype.hasOwnProperty.call(value, 'modelType') ? value.modelType : 'small-vessel'
     };
+    if (!['small-vessel', 'large-vessel'].includes(target.modelType)) throw new Error(`${path}.modelType 不支援。`);
     if (Object.prototype.hasOwnProperty.call(value, 'anchor')) {
       if (value.anchor !== 'bottom-center') throw new Error(`${path}.anchor 不支援。`);
       target.anchor = value.anchor;

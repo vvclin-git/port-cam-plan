@@ -95,6 +95,8 @@
     let lastWheelAt = -Infinity;
     let placementPreviewDraft = null;
     let placementPreview = null;
+    let targetPlacementPreviewDraft = null;
+    let targetPlacementPreview = null;
 
     function ensurePanes() {
       if (!map.createPane) return;
@@ -215,11 +217,13 @@
       placementPreview.marker.setTooltipContent?.('Preview');
       renderFov(placementPreview, placementPreviewDraft, state, {preview: true});
     }
-    function targetIcon(target, selected) {
+    function targetIcon(target, selected, preview) {
       const classes = ['target-marker']; if (selected) classes.push('is-selected'); if (target.locked) classes.push('is-locked'); if (target.enabled === false) classes.push('is-disabled');
-      return L.divIcon({className: 'entity-marker-wrapper', html: `<span class="${classes.join(' ')}" aria-hidden="true"></span>`, iconSize: [26, 26], iconAnchor: [13, 13]});
+      if (preview) classes.push('is-preview');
+      const asset = target.modelType === 'large-vessel' ? 'assets/target-large-vessel.png' : 'assets/target-small-vessel.png';
+      return L.divIcon({className: 'entity-marker-wrapper', html: `<span class="${classes.join(' ')}" style="--target-heading:${Number(target.headingDeg)||0}deg;--target-asset:url('${asset}')" aria-hidden="true"></span>`, iconSize: [40, 40], iconAnchor: [20, 20]});
     }
-    function targetIconKey(target, selected) { return `${selected ? 1 : 0}:${target.locked ? 1 : 0}:${target.enabled === false ? 1 : 0}`; }
+    function targetIconKey(target, selected) { return `${target.modelType||'small-vessel'}:${Number(target.headingDeg)||0}:${selected ? 1 : 0}:${target.locked ? 1 : 0}:${target.enabled === false ? 1 : 0}`; }
     function ensureTarget(target) {
       if (targetLayers.has(target.id)) return targetLayers.get(target.id);
       const group = layerGroup();
@@ -249,6 +253,8 @@
       }
       if (selected && record.group.bringToFront) record.group.bringToFront();
     }
+    function clearTargetPlacementPreview() { targetPlacementPreviewDraft=null; if(targetPlacementPreview){remove(targetPlacementPreview.group);targetPlacementPreview=null;} }
+    function renderTargetPlacementPreview() { const target=targetPlacementPreviewDraft; if(!target?.position){clearTargetPlacementPreview();return;} if(!targetPlacementPreview){const group=layerGroup();const marker=L.marker(point(L,target.position),{interactive:false,draggable:false,pane:PANE_NAMES.target,icon:targetIcon(target,false,true)}).addTo(group);targetPlacementPreview={group,marker,key:''};} const rec=targetPlacementPreview,key=targetIconKey(target,false);rec.marker.setLatLng(point(L,target.position));if(rec.key!==key){rec.marker.setIcon(targetIcon(target,false,true));rec.key=key;} }
     function sync(state) {
       if (destroyed) return;
       const projected = {...state, camerasById: {...state.camerasById}, targetsById: {...state.targetsById}};
@@ -259,6 +265,7 @@
       targetLayers.forEach((record, id) => { if (!wantedTargets.has(id)) { record.interaction?.destroy(); remove(record.group); targetLayers.delete(id); } });
       state.cameraOrder.forEach(id => syncCamera(projected.camerasById[id], projected)); state.targetOrder.forEach(id => syncTarget(projected.targetsById[id], projected));
       renderCameraPlacementPreview(projected);
+      renderTargetPlacementPreview();
     }
     function snapshot(id, table) { const record = table.get(id); if (!record) return null; const visible = !map.hasLayer || map.hasLayer(record.group); return {markerPosition: visible && record.marker.getLatLng ? record.marker.getLatLng() : null, visible, markerType: record.marker.constructor?.name || 'marker'}; }
     function getCameraLayerSnapshot(id) { const record = cameraLayers.get(id); if (!record) return null; return {...snapshot(id, cameraLayers), envelopeLayerCount: record.envelope.length, bandLayerCount: record.bands.length, centerlinePresent: Boolean(record.centerline), labelVisible: record.labelVisible}; }
@@ -294,7 +301,7 @@
     function handleMapClick(event) { if (!destroyed && event?.latlng && onMapClick) onMapClick(event.latlng, event.originalEvent); }
     function handleMapMove(event) { if (!destroyed && event?.latlng && onMapMove) onMapMove(event.latlng, event.originalEvent); }
     ensurePanes(); bindWheel(); map.on?.('click', handleMapClick); map.on?.('mousemove', handleMapMove);
-    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, getViewport, setViewport, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
+    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, getViewport, setViewport, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, setTargetPlacementPreview(targetDraft) { targetPlacementPreviewDraft=targetDraft?clone(targetDraft):null; renderTargetPlacementPreview(); }, clearTargetPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); clearTargetPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); clearTargetPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
   }
   return {createMapController, createEntityMarkerInteraction, coverageBandRanges, CAMERA_COLORS, COVERAGE_COLORS, PANE_NAMES};
 }));
