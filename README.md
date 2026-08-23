@@ -1,6 +1,6 @@
 # 港區 AI 攝影機規劃工具
 
-Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 YOLO 目標尺寸；目前版本為 v0.9 Phase 4.4，已包含多 Camera Comparison、YOLO Coverage、互斥 FOV 著色、兩階段 Camera 放置、可移動 Coverage Legend、可收合面板與 Focus map。
+Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 YOLO 目標尺寸；目前版本包含 Target model、browser-local Target Defaults/Preset Library、兩階段 Target 定向放置與 SVG 船型符號。Project 檔只保存 Target 最終值，不包含本機 Defaults 或 Preset Library。
 
 ## 開啟
 

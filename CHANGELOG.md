@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase 5.5 — 2026-08-24
+
+- Added Target Defaults/Preset Library controls, atomic Target Library import/export, Target Inspector Apply/Reset, and strict project `modelType` persistence.
+- Replaced raster vessel markers with fixed-size SVG vessel symbols rotated within the SVG rather than the Leaflet marker transform.
+
 ## Phase 4.4 — 2026-08-22 (`29b753e`)
 
 - Added independent `Objects`, `Inspector`, and `Focus map` controls with responsive panel allocation and full-width Focus map projection, without putting panel state into Project data or history.

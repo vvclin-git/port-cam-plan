@@ -1,11 +1,15 @@
 /* Leaflet projection for normalized PortCam project state. */
 (function (root, factory) {
-  const api = factory(root.PortCamCore || (typeof require === 'function' ? require('./portcam-core.js') : null));
+  const api = factory(
+    root.PortCamCore || (typeof require === 'function' ? require('./portcam-core.js') : null),
+    root.PortCamVesselSymbol || (typeof require === 'function' ? require('./portcam-vessel-symbol.js') : null)
+  );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamMap = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, VesselSymbol) {
   'use strict';
   if (!Core) throw new Error('PortCamMap requires PortCamCore');
+  if (!VesselSymbol) throw new Error('PortCamMap requires PortCamVesselSymbol');
 
   const clone = value => JSON.parse(JSON.stringify(value));
   const point = (L, position) => L.latLng(position.latitudeDeg, position.longitudeDeg);
@@ -220,8 +224,7 @@
     function targetIcon(target, selected, preview) {
       const classes = ['target-marker']; if (selected) classes.push('is-selected'); if (target.locked) classes.push('is-locked'); if (target.enabled === false) classes.push('is-disabled');
       if (preview) classes.push('is-preview');
-      const asset = target.modelType === 'large-vessel' ? 'assets/target-large-vessel.png' : 'assets/target-small-vessel.png';
-      return L.divIcon({className: 'entity-marker-wrapper', html: `<span class="${classes.join(' ')}" style="--target-heading:${Number(target.headingDeg)||0}deg;--target-asset:url('${asset}')" aria-hidden="true"></span>`, iconSize: [40, 40], iconAnchor: [20, 20]});
+      return L.divIcon(VesselSymbol.iconOptions(target, {selected, preview}));
     }
     function targetIconKey(target, selected) { return `${target.modelType||'small-vessel'}:${Number(target.headingDeg)||0}:${selected ? 1 : 0}:${target.locked ? 1 : 0}:${target.enabled === false ? 1 : 0}`; }
     function ensureTarget(target) {
