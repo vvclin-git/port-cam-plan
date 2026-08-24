@@ -12,11 +12,12 @@
     root.PortCamTargetDefaults || (typeof require === 'function' ? require('./portcam-target-defaults.js') : null),
     root.PortCamTargetPresets || (typeof require === 'function' ? require('./portcam-target-presets.js') : null),
     root.PortCamTargetCatalog || (typeof require === 'function' ? require('./portcam-target-catalog.js') : null),
-    root.PortCamTargetPresetTransfer || (typeof require === 'function' ? require('./portcam-target-preset-transfer.js') : null)
+    root.PortCamTargetPresetTransfer || (typeof require === 'function' ? require('./portcam-target-preset-transfer.js') : null),
+    root.PortCamCoverageAudit || (typeof require === 'function' ? require('./portcam-coverage-audit.js') : null)
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamUI = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer, Project, TargetDefaults, TargetPresets, TargetCatalog, TargetPresetTransfer) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer, Project, TargetDefaults, TargetPresets, TargetCatalog, TargetPresetTransfer, CoverageAudit) {
   'use strict';
   if (!Core) throw new Error('PortCamUI requires PortCamCore');
   if (!Comparison) throw new Error('PortCamUI requires PortCamComparison');
@@ -26,6 +27,7 @@
   if (!CameraPresetTransfer) throw new Error('PortCamUI requires PortCamCameraPresetTransfer');
   if (!Project) throw new Error('PortCamUI requires PortCamProject');
   if (!TargetDefaults || !TargetPresets || !TargetCatalog || !TargetPresetTransfer) throw new Error('PortCamUI requires Target Defaults, Presets and Catalog');
+  if (!CoverageAudit) throw new Error('PortCamUI requires Coverage Audit');
 
   const CAMERA_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#c2410c', '#15803d', '#be123c', '#a16207'];
   const TILE_PADDING = 1;
@@ -68,7 +70,7 @@
     return {
       projectId: options?.projectId || newProjectId(),
       name: 'Untitled project',
-      settings: {planningTargetHeightM: 2, baseMapKey: 'osm', tileZoom: 18, surfaceVisible: true, coverageTargetDimension: 'short'},
+      settings: {planningTargetHeightM: 2, baseMapKey: 'osm', tileZoom: 18, surfaceVisible: true, coverageTargetDimension: 'short', coverageAuditDimension: 'width', coverageAuditMinimumTier: 'usable', coverageAuditRequiredCameras: 1},
       cameras: [{id: 'camera-a', name: 'Camera A', color: CAMERA_COLORS[0], position: {latitudeDeg: 22.6082, longitudeDeg: 120.2824}, ...cameraDefaults, headingDeg: DEFAULT_CAMERA.headingDeg}],
       targets: []
     };
@@ -128,7 +130,7 @@
     let projectSettingsDraft = null;
     let projectSettingsSensorMode = null;
     let projectSettingsResolutionMode = null;
-    let projectSettingsAccordion = {camera: true, target: false};
+    let projectSettingsAccordion = {camera: true, target: false, coverage: false};
     let projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID;
     let inspectorPresetSelectionId = CameraPresets.FACTORY_PRESET_ID;
     let projectImportBundle = null;
@@ -774,8 +776,8 @@
       return true;
     }
     function renderProjectSettingsAccordion() {
-      const controls = {camera: $('projectCameraAccordionToggle'), target: $('projectTargetAccordionToggle')};
-      const panels = {camera: $('projectCameraAccordionPanel'), target: $('projectTargetAccordionPanel')};
+      const controls = {camera: $('projectCameraAccordionToggle'), target: $('projectTargetAccordionToggle'), coverage: $('projectCoverageAccordionToggle')};
+      const panels = {camera: $('projectCameraAccordionPanel'), target: $('projectTargetAccordionPanel'), coverage: $('projectCoverageAccordionPanel')};
       Object.keys(controls).forEach(key => {
         const expanded = projectSettingsAccordion[key] === true;
         controls[key]?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
@@ -789,6 +791,8 @@
       if (!projectSettingsOpen) return;
       renderProjectSettingsAccordion();
       syncProjectSettingsForm(projectSettingsDraft);
+      const settings = store.getState().settings;
+      setValue($('coverageAuditDimension'), settings.coverageAuditDimension || 'width'); setValue($('coverageAuditMinimumTier'), settings.coverageAuditMinimumTier || 'usable'); setValue($('coverageAuditRequiredCameras'), settings.coverageAuditRequiredCameras || 1);
       syncProjectPresetLibrary();
       renderProjectImport();
       const status = cameraDefaultsRepository.getStatus();
@@ -806,7 +810,7 @@
       projectSettingsDraft = cameraDefaultsRepository.getDefaults();
       projectSettingsSensorMode = sensorPresetKey(projectSettingsDraft);
       projectSettingsResolutionMode = resolutionPresetKey(projectSettingsDraft);
-      projectSettingsAccordion = {camera: true, target: false};
+      projectSettingsAccordion = {camera: true, target: false, coverage: false};
       projectSettingsPresetId = CameraPresets.FACTORY_PRESET_ID;
       resetProjectImportState();
       projectSettingsOpen = true;
@@ -1106,27 +1110,17 @@
     }
     function renderWorkspace(state) {
       if (!els.workspaceContent) return;
-      const active = state.uiState.activeWorkspaceTab === 'yolo' ? 'yolo' : 'comparison';
-      if (els.workspaceTabs) Array.from(els.workspaceTabs.querySelectorAll('[data-workspace-tab]')).forEach(tab => tab.setAttribute('aria-selected', tab.dataset.workspaceTab === active ? 'true' : 'false'));
-      const targetId = state.uiState.selectedTargetId;
-      const targetFromState = targetId ? state.targetsById[targetId] : null;
-      const target = selectedTarget(state);
-      const enabledCount = state.cameraOrder.filter(id => state.camerasById[id]?.enabled !== false).length;
-      const disabledCount = state.cameraOrder.filter(id => state.camerasById[id]?.enabled === false).length;
-      if (els.workspaceSummary) els.workspaceSummary.textContent = `Current Target: ${targetFromState?.name || '—'} · ${enabledCount} enabled Cameras · ${disabledCount} disabled excluded`;
+      const audit = CoverageAudit.buildCoverageAudit({cameraOrder:state.cameraOrder,camerasById:state.camerasById,targetOrder:state.targetOrder,targetsById:state.targetsById,dimension:state.settings.coverageAuditDimension,minimumTier:state.settings.coverageAuditMinimumTier,requiredCameras:state.settings.coverageAuditRequiredCameras,getObservation:(cameraId,targetId)=>store.getObservation(cameraId,targetId)});
+      const labels={width:'Width',length:'Length',height:'Height',robust:'Robust',usable:'Usable',difficult:'Difficult',notRecommended:'Not recommended'};
+      if (els.workspaceSummary) els.workspaceSummary.textContent = `Dimension: ${labels[audit.settings.dimension]} · Minimum: ${labels[audit.settings.minimumTier]} · Required cameras: ${audit.settings.requiredCameras} · Targets ${audit.summary.targets} · Covered ${audit.summary.covered} · Under-covered ${audit.summary.underCovered} · Uncovered ${audit.summary.uncovered}`;
       if (state.uiState.panelOpen?.workspace !== true) {
-        els.workspaceContent.innerHTML = `<div class="empty-next"><strong>${active === 'yolo' ? 'YOLO Coverage' : 'Camera Comparison'}</strong>Expand the workspace to load Observations.</div>`;
+        els.workspaceContent.innerHTML = '<div class="empty-next"><strong>Coverage Audit</strong>Expand the workspace to load the Camera × Target matrix.</div>';
         return;
       }
-      if (active === 'yolo') {
-        els.workspaceContent.innerHTML = `<div class="yolo-view">${yoloCoverageMarkup(state, target)}</div>`;
-        return;
-      }
-      if (!target) {
-        els.workspaceContent.innerHTML = '<div class="comparison-empty result-state neutral"><strong>No Current Target</strong>Select a Target from Object Manager or the map.</div>';
-        return;
-      }
-      els.workspaceContent.innerHTML = `<div class="comparison-view">${comparisonMarkup(state, target)}</div>`;
+      if (!audit.cameras.length || !audit.targets.length) { els.workspaceContent.innerHTML=`<div class="empty-next"><strong>${!audit.cameras.length?'No Cameras':'No Targets'}</strong>Create the missing Project entities to run the audit.</div>`; return; }
+      const headers=audit.targetSummaries.map(item=>{const label=item.status==='disabled'?'Disabled':item.status==='uncovered'?'Uncovered':item.status==='under-covered'?`Under-covered ${item.qualifiedCount}/${audit.settings.requiredCameras}`:`Covered ×${item.qualifiedCount}`;return `<th class="audit-target" scope="col"><button type="button" data-audit-target-id="${escapeHtml(item.target.id)}">${escapeHtml(item.target.name||item.target.id)}<small>${label}${item.singleSource?' · Single source':''}<br>Best ${item.bestPx==null?'—':item.bestPx.toFixed(1)+' px'}</small></button></th>`;}).join('');
+      const rows=audit.rows.map(row=>{const optics=Core.computeOptics(row.camera);const cells=row.cells.map((cell,index)=>`<td><button type="button" class="audit-cell audit-${cell.key}${state.uiState.selectedCameraId===row.camera.id&&state.uiState.selectedTargetId===audit.targets[index].id?' is-selected':''}" data-audit-camera-id="${escapeHtml(row.camera.id)}" data-audit-target-id="${escapeHtml(audit.targets[index].id)}"><b>${cell.px==null?'—':cell.px.toFixed(1)+' px'}</b><small>${cell.label}</small></button></td>`).join('');return `<tr><th class="audit-camera" scope="row"><button type="button" data-audit-camera-id="${escapeHtml(row.camera.id)}"><i style="background:${escapeHtml(cameraColor(row.camera,state.cameraOrder))}"></i>${escapeHtml(row.camera.name||row.camera.id)}${state.uiState.selectedCameraId===row.camera.id?' <small>Active</small>':''}</button></th><td>${row.camera.enabled===false?'Disabled':row.camera.lifecycle==='draft-unplaced'?'Unavailable':'Enabled'}</td><td>${Number(row.camera.heightM).toFixed(0)} m<br><small>Heading ${Number(row.camera.headingDeg).toFixed(0)}°</small></td><td>${optics.horizontalFovDeg.toFixed(2)}° × ${optics.verticalFovDeg.toFixed(2)}°<br><small title="H ${optics.widthPx/optics.horizontalFovDeg} px/° · V ${optics.heightPx/optics.verticalFovDeg} px/°">${(optics.widthPx/optics.horizontalFovDeg).toFixed(0)} px/°</small></td><td>Qualified ${row.qualifiedCount}/${audit.summary.targets}<br><small>Best for ${row.bestCount}</small></td>${cells}</tr>`;}).join('');
+      els.workspaceContent.innerHTML=`<div class="audit-view"><div class="yolo-warning result-state neutral">Pixel coverage is a site-planning heuristic, not guaranteed model detection performance.</div><div class="audit-scroll" role="region" aria-label="Camera by Target Coverage Audit"><table class="audit-table"><thead><tr><th>Camera</th><th>State</th><th>Mount</th><th>View</th><th>Contribution</th>${headers}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }
     function renderMapSettings(state) {
       if (els.baseMapSelect) setValue(els.baseMapSelect, state.settings.baseMapKey || 'osm');
@@ -1569,6 +1563,12 @@
       if (comparisonCamera) { activateComparisonCamera(comparisonCamera.dataset.comparisonCameraId); return; }
       const yoloCamera = event.target.closest?.('[data-yolo-camera-id]');
       if (yoloCamera) { activateYoloCoverageCamera(yoloCamera.dataset.yoloCameraId); return; }
+      const auditCell = event.target.closest?.('[data-audit-camera-id][data-audit-target-id]');
+      if (auditCell) { store.selectCamera(auditCell.dataset.auditCameraId); store.selectTarget(auditCell.dataset.auditTargetId); store.setInspectorTab('observation'); showInspector(); return; }
+      const auditCamera = event.target.closest?.('[data-audit-camera-id]');
+      if (auditCamera) { store.selectCamera(auditCamera.dataset.auditCameraId); return; }
+      const auditTarget = event.target.closest?.('[data-audit-target-id]');
+      if (auditTarget) { store.selectTarget(auditTarget.dataset.auditTargetId); return; }
       const fovColorMode = event.target.closest?.('[data-fov-color-mode]');
       if (fovColorMode) { store.setFovColorMode(fovColorMode.dataset.fovColorMode); return; }
       const modeButton = event.target.closest?.('[data-mode]');
@@ -1695,7 +1695,9 @@
     listen(els.mapLegend, 'pointerdown', onLegendPointerDown); listen(els.mapLegend, 'pointermove', onLegendPointerMove); listen(els.mapLegend, 'pointerup', onLegendPointerUp); listen(els.mapLegend, 'pointercancel', onLegendPointerUp); listen(els.mapLegend, 'click', onLegendClick); listen(els.mapLegend, 'keydown', onLegendKeydown);
     listen(els.headingScrubber, 'pointerdown', onHeadingPointerDown); listen(els.headingScrubber, 'pointermove', onHeadingPointerMove); listen(els.headingScrubber, 'pointerup', onHeadingPointerUp); listen(els.headingScrubber, 'pointercancel', onHeadingPointerUp); listen(els.headingScrubber, 'keydown', onHeadingKeydown);
     listen(els.inspector, 'click', onInspectorClick); listen(els.projectSettingsModal, 'click', onProjectSettingsClick); listen(els.projectPresetImportFile, 'change', event => handleProjectImportFile(event.target.files?.[0] || null)); listen($('projectTargetPresetImportFile'), 'change', event => readTargetImport(event.target.files?.[0] || null)); listen(els.projectOpenFile, 'change', event => handleProjectFile(event.target.files?.[0] || null)); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'change', event => { if(event.target.id==='projectTargetPresetSelect'){projectTargetPresetId=event.target.value;renderTargetPresetLibrary();} if(event.target.matches?.('input[name="projectTargetImportMode"],#projectTargetImportDefaults')) planTargetImport(); }); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter); listen(view, 'beforeunload', onBeforeUnload);
+    listen(els.appShell, 'change', event => { const id=event.target.id; if(id==='coverageAuditDimension') store.patchSettings({coverageAuditDimension:event.target.value},'coverage-audit-dimension'); if(id==='coverageAuditMinimumTier') store.patchSettings({coverageAuditMinimumTier:event.target.value},'coverage-audit-minimum-tier'); if(id==='coverageAuditRequiredCameras') store.patchSettings({coverageAuditRequiredCameras:Math.max(1,Math.floor(Number(event.target.value)||1))},'coverage-audit-required-cameras'); });
     listen($('addCamera'), 'click', beginCameraPlacement);
+    listen(els.workspaceContent, 'keydown', event => { const cell=event.target.closest?.('.audit-cell'); if(!cell || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return; const cells=Array.from(els.workspaceContent.querySelectorAll('.audit-cell')); const index=cells.indexOf(cell); const columns=Math.max(1,store.getState().targetOrder.length); const delta=event.key==='ArrowLeft'?-1:event.key==='ArrowRight'?1:event.key==='ArrowUp'?-columns:columns; const next=cells[index+delta]; if(next){event.preventDefault();next.focus();} });
     listen($('addTargetManager'), 'click', beginTargetPlacement);
     listen($('undoButton'), 'click', () => store.undo()); listen($('redoButton'), 'click', () => store.redo());
     if (view.ResizeObserver) { resizeObserver = new view.ResizeObserver(scheduleInvalidate); if (els.appShell) resizeObserver.observe(els.appShell); if (els.inspector) resizeObserver.observe(els.inspector); if (els.mapWorkspace) resizeObserver.observe(els.mapWorkspace); }

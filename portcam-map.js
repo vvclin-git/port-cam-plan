@@ -221,19 +221,45 @@
       placementPreview.marker.setTooltipContent?.('Preview');
       renderFov(placementPreview, placementPreviewDraft, state, {preview: true});
     }
-    function targetIcon(target, selected, preview) {
-      const classes = ['target-marker']; if (selected) classes.push('is-selected'); if (target.locked) classes.push('is-locked'); if (target.enabled === false) classes.push('is-disabled');
-      if (preview) classes.push('is-preview');
-      return L.divIcon(VesselSymbol.iconOptions(target, {selected, preview}));
+    function pixelsPerMeter(target) {
+      // latLngToLayerPoint rounds to whole pixels.  At the geographic-symbol
+      // threshold one metre is often sub-pixel, so use map.project when
+      // available and measure a longer local baseline before normalizing.
+      const sampleDistanceM = 100;
+      const zoom = Number(map.getZoom?.());
+      const project = map.project
+        ? latlng => map.project(latlng, zoom)
+        : map.latLngToLayerPoint
+          ? latlng => map.latLngToLayerPoint(latlng)
+          : null;
+      if (!project || !target?.position) return null;
+      const origin = point(L, target.position);
+      const north = L.latLng(Core.destinationPoint(target.position, 0, sampleDistanceM));
+      const east = L.latLng(Core.destinationPoint(target.position, 90, sampleDistanceM));
+      const centerPx = project(origin), northPx = project(north), eastPx = project(east);
+      const distance = (left, right) => left?.distanceTo ? left.distanceTo(right) : Math.hypot(Number(left?.x) - Number(right?.x), Number(left?.y) - Number(right?.y));
+      const northScale = distance(centerPx, northPx), eastScale = distance(centerPx, eastPx);
+      const scale = (northScale + eastScale) / (2 * sampleDistanceM);
+      return Number.isFinite(scale) && scale > 0 ? scale : null;
     }
-    function targetIconKey(target, selected) { return `${target.modelType||'small-vessel'}:${Number(target.headingDeg)||0}:${selected ? 1 : 0}:${target.locked ? 1 : 0}:${target.enabled === false ? 1 : 0}`; }
+    function targetProjection(target) {
+      const zoom = Number(map.getZoom?.());
+      if (zoom >= VesselSymbol.GEOGRAPHIC_ZOOM) {
+        const scale = pixelsPerMeter(target);
+        if (scale) return {mode: 'geographic', widthPx: target.widthM * scale, heightPx: target.lengthM * scale, scale, zoom};
+      }
+      return {mode: 'symbol', zoom};
+    }
+    function targetIcon(target, selected, preview, projection) { return L.divIcon(VesselSymbol.iconOptions(target, {selected, preview, ...(projection || targetProjection(target))})); }
+    function targetIconKey(target, selected, projection) { const value = projection || targetProjection(target); return `${value.mode}:${value.zoom}:${value.widthPx || 40}:${value.heightPx || 40}:${target.modelType||'small-vessel'}:${Number(target.lengthM)||0}:${Number(target.widthM)||0}:${Number(target.headingDeg)||0}:${selected ? 1 : 0}:${target.locked ? 1 : 0}:${target.enabled === false ? 1 : 0}`; }
     function ensureTarget(target) {
       if (targetLayers.has(target.id)) return targetLayers.get(target.id);
       const group = layerGroup();
-      const marker = L.marker(point(L, target.position), {draggable: false, pane: PANE_NAMES.target, bubblingMouseEvents: false, icon: targetIcon(target, false)}).bindTooltip(target.name || target.id, entityTooltip());
+      const projection = targetProjection(target);
+      const marker = L.marker(point(L, target.position), {draggable: false, pane: PANE_NAMES.target, bubblingMouseEvents: false, icon: targetIcon(target, false, false, projection)}).bindTooltip(target.name || target.id, entityTooltip());
       marker.__portcamEntityId = target.id;
       marker.on('click', event => { event?.originalEvent?.stopPropagation?.(); store.selectTarget(target.id); onTargetSelect?.(target.id); });
-      const record = {group, marker, line: null, interaction: null, labelVisible: labels.target, iconKey: targetIconKey(target, false)};
+      const record = {group, marker, line: null, interaction: null, labelVisible: labels.target, iconKey: targetIconKey(target, false, projection)};
       record.interaction = createEntityMarkerInteraction({kind: 'target', marker, store});
       marker.addTo(group); setLabel(record, 'target', labels.target); targetLayers.set(target.id, record);
       return record;
@@ -243,8 +269,8 @@
       const record = ensureTarget(target), selected = state.uiState.focusedEntity?.kind === 'target' && state.uiState.focusedEntity.id === target.id, current = state.uiState.selectedTargetId === target.id;
       if (target.visible === false) { record.marker.options.draggable = false; record.marker.dragging?.disable?.(); removeLayer(record, 'line'); remove(record.group); return; }
       if (!map.hasLayer || !map.hasLayer(record.group)) record.group.addTo(map);
-      const iconKey = targetIconKey(target, selected);
-      record.marker.setLatLng(point(L, target.position)); record.marker.setTooltipContent?.(target.name || target.id); record.marker.setOpacity(target.enabled === false ? .45 : 1); if (record.iconKey !== iconKey) { record.marker.setIcon?.(targetIcon(target, selected)); record.iconKey = iconKey; } setLabel(record, 'target', labels.target);
+      const projection = targetProjection(target), iconKey = targetIconKey(target, selected, projection);
+      record.marker.setLatLng(point(L, target.position)); record.marker.setTooltipContent?.(target.name || target.id); record.marker.setOpacity(target.enabled === false ? .45 : 1); if (record.iconKey !== iconKey) { record.marker.setIcon?.(targetIcon(target, selected, false, projection)); record.iconKey = iconKey; } setLabel(record, 'target', labels.target);
       const canDrag = selected && target.visible !== false && target.locked !== true && state.uiState.interactionMode === 'navigate';
       record.marker.options.draggable = canDrag;
       if (record.marker.dragging) canDrag ? record.marker.dragging.enable() : record.marker.dragging.disable();
@@ -257,7 +283,7 @@
       if (selected && record.group.bringToFront) record.group.bringToFront();
     }
     function clearTargetPlacementPreview() { targetPlacementPreviewDraft=null; if(targetPlacementPreview){remove(targetPlacementPreview.group);targetPlacementPreview=null;} }
-    function renderTargetPlacementPreview() { const target=targetPlacementPreviewDraft; if(!target?.position){clearTargetPlacementPreview();return;} if(!targetPlacementPreview){const group=layerGroup();const marker=L.marker(point(L,target.position),{interactive:false,draggable:false,pane:PANE_NAMES.target,icon:targetIcon(target,false,true)}).addTo(group);targetPlacementPreview={group,marker,key:''};} const rec=targetPlacementPreview,key=targetIconKey(target,false);rec.marker.setLatLng(point(L,target.position));if(rec.key!==key){rec.marker.setIcon(targetIcon(target,false,true));rec.key=key;} }
+    function renderTargetPlacementPreview() { const target=targetPlacementPreviewDraft; if(!target?.position){clearTargetPlacementPreview();return;} const projection=targetProjection(target); if(!targetPlacementPreview){const group=layerGroup();const marker=L.marker(point(L,target.position),{interactive:false,draggable:false,pane:PANE_NAMES.target,icon:targetIcon(target,false,true,projection)}).addTo(group);targetPlacementPreview={group,marker,key:''};} const rec=targetPlacementPreview,key=targetIconKey(target,false,projection);rec.marker.setLatLng(point(L,target.position));if(rec.key!==key){rec.marker.setIcon(targetIcon(target,false,true,projection));rec.key=key;} }
     function sync(state) {
       if (destroyed) return;
       const projected = {...state, camerasById: {...state.camerasById}, targetsById: {...state.targetsById}};
@@ -272,7 +298,7 @@
     }
     function snapshot(id, table) { const record = table.get(id); if (!record) return null; const visible = !map.hasLayer || map.hasLayer(record.group); return {markerPosition: visible && record.marker.getLatLng ? record.marker.getLatLng() : null, visible, markerType: record.marker.constructor?.name || 'marker'}; }
     function getCameraLayerSnapshot(id) { const record = cameraLayers.get(id); if (!record) return null; return {...snapshot(id, cameraLayers), envelopeLayerCount: record.envelope.length, bandLayerCount: record.bands.length, centerlinePresent: Boolean(record.centerline), labelVisible: record.labelVisible}; }
-    function getTargetLayerSnapshot(id) { const record = targetLayers.get(id); if (!record) return null; return {...snapshot(id, targetLayers), linePresent: Boolean(record.line), labelVisible: record.labelVisible}; }
+    function getTargetLayerSnapshot(id) { const record = targetLayers.get(id); if (!record) return null; return {...snapshot(id, targetLayers), linePresent: Boolean(record.line), labelVisible: record.labelVisible, iconSize: record.marker.options.icon?.iconSize?.slice?.() || null, iconAnchor: record.marker.options.icon?.iconAnchor?.slice?.() || null}; }
     function fitCamera(id) { const record = cameraLayers.get(id); if (record) map.setView(record.marker.getLatLng(), Math.max(map.getZoom(), 15)); }
     function fitTarget(id) { const record = targetLayers.get(id); if (record) map.setView(record.marker.getLatLng(), Math.max(map.getZoom(), 15)); }
     function fitCameraFov(id) { const record = cameraLayers.get(id); if (record && record.envelope[0]?.getBounds) map.fitBounds(record.envelope[0].getBounds()); }
@@ -303,8 +329,9 @@
     function bindWheel() { map.scrollWheelZoom?.disable?.(); wheelContainer = map.getContainer?.(); if (wheelContainer?.addEventListener) wheelContainer.addEventListener('wheel', wheelZoom, {passive: false}); }
     function handleMapClick(event) { if (!destroyed && event?.latlng && onMapClick) onMapClick(event.latlng, event.originalEvent); }
     function handleMapMove(event) { if (!destroyed && event?.latlng && onMapMove) onMapMove(event.latlng, event.originalEvent); }
-    ensurePanes(); bindWheel(); map.on?.('click', handleMapClick); map.on?.('mousemove', handleMapMove);
-    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, getViewport, setViewport, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, setTargetPlacementPreview(targetDraft) { targetPlacementPreviewDraft=targetDraft?clone(targetDraft):null; renderTargetPlacementPreview(); }, clearTargetPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); clearTargetPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); clearTargetPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
+    function handleZoomEnd() { if (!destroyed) sync(store.getState()); }
+    ensurePanes(); bindWheel(); map.on?.('click', handleMapClick); map.on?.('mousemove', handleMapMove); map.on?.('zoomend', handleZoomEnd);
+    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, getViewport, setViewport, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, setTargetPlacementPreview(targetDraft) { targetPlacementPreviewDraft=targetDraft?clone(targetDraft):null; renderTargetPlacementPreview(); }, clearTargetPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); clearTargetPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); map.off?.('zoomend', handleZoomEnd); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); clearTargetPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
   }
   return {createMapController, createEntityMarkerInteraction, coverageBandRanges, CAMERA_COLORS, COVERAGE_COLORS, PANE_NAMES};
 }));

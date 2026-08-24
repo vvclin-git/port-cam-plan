@@ -16,9 +16,19 @@ test('SVG symbol keeps heading rotation inside the SVG and projects state outsid
   const icon = Symbols.iconOptions(target, {selected: true});
   assert.match(markup, /<g transform="rotate\(90\)">/);
   assert.match(markup, /vessel-hull-large-vessel/);
-  assert.equal(icon.iconSize[0], 40);
+  assert.equal(icon.iconSize[0], Symbols.SYMBOL_SIZE);
   assert.match(icon.html, /is-selected/);
   assert.match(icon.html, /is-locked/);
   assert.match(icon.html, /is-disabled/);
   assert.doesNotMatch(icon.html, /style="[^\"]*rotate/);
+});
+
+test('geographic symbols use real Target length and width while retaining SVG heading rotation', () => {
+  const target = {modelType: 'large-vessel', lengthM: 300, widthM: 48, headingDeg: 90};
+  const icon = Symbols.iconOptions(target, {mode: 'geographic', widthPx: 96, heightPx: 600});
+  assert.deepEqual(icon.iconSize, [96, 600]);
+  assert.deepEqual(icon.iconAnchor, [48, 300]);
+  assert.match(icon.html, /viewBox="-31\.2 -165 62\.4 330"/);
+  assert.match(icon.html, /rotate\(90\)/);
+  assert.match(icon.html, /is-geographic/);
 });

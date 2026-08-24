@@ -1,6 +1,6 @@
 # 港區 AI 攝影機規劃工具
 
-Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 YOLO 目標尺寸；目前版本包含 Target model、browser-local Target Defaults/Preset Library、兩階段 Target 定向放置與 SVG 船型符號。Project 檔只保存 Target 最終值，不包含本機 Defaults 或 Preset Library。
+Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 Target pixel coverage；目前版本包含 Target model、browser-local Target Defaults/Preset Library、兩階段 Target 定向放置、SVG 船型符號與 Camera × Target Coverage Audit。Project 檔只保存 Target 最終值，不包含本機 Defaults 或 Preset Library。
 
 ## 開啟
 
@@ -36,6 +36,7 @@ python -m http.server 8765 --bind 127.0.0.1
 - Pixel coverage Legend 僅在 Coverage 模式顯示，支援 Pointer Events 拖曳、觸控、鍵盤位移、Escape 還原、Reset 與 workspace 邊界限制。
 - Top Bar 提供獨立 `Objects`、`Inspector`、`Focus map` 控制；Inspector 的 Heading 另有 N/E/S/W compass scrubber。
 - FOV coverage 依短邊像素分成 ≥32、16–32、8–16、<8 px 四段。
+- Bottom Workspace 的 Coverage Audit 以 Width／Length／Height 任一尺寸估算 pixel coverage，顯示每個 Target 的合格來源、最佳 Camera 與單點風險；這是 site-planning heuristic，不是實際模型偵測率。
 
 ## v0.7 水陸圖資
 

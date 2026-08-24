@@ -231,6 +231,11 @@
     const pixelHeight = (dimensions.heightM * optics.focalLengthMm) / (distanceM * optics.pixelPitchMm);
     const shortSidePx = (Math.min(dimensions.lengthM, dimensions.widthM) * optics.focalLengthMm) /
       (distanceM * optics.pixelPitchMm);
+    const coveragePixels = {
+      length: (dimensions.lengthM * optics.focalLengthMm) / (distanceM * optics.pixelPitchMm),
+      width: (dimensions.widthM * optics.focalLengthMm) / (distanceM * optics.pixelPitchMm),
+      height: (dimensions.heightM * optics.focalLengthMm) / (distanceM * optics.pixelPitchMm)
+    };
     return {
       cameraId: camera.id ?? null,
       targetId: target.id ?? null,
@@ -247,6 +252,7 @@
       pixelHeight,
       estimatedPixelWidth: pixelWidth,
       estimatedPixelHeight: pixelHeight,
+      coveragePixels,
       yolo: {
         shortSidePx,
         p3Cells: shortSidePx / 8,

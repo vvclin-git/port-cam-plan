@@ -1,9 +1,16 @@
 # Changelog
 
+## Phase 5.6 — 2026-08-25
+
+- Replaced user-visible Camera Comparison and YOLO Coverage Workspace tabs with a runtime-only Camera × Target Coverage Audit matrix.
+- Added persisted Project-level coverage dimension, minimum quality tier, and required-camera requirements with legacy-project defaults.
+- Observation now exposes dimension-specific `coveragePixels`; the matrix derives qualification, best Camera, contribution, redundancy, and summary without persisting results.
+
 ## Phase 5.5 — 2026-08-24
 
 - Added Target Defaults/Preset Library controls, atomic Target Library import/export, Target Inspector Apply/Reset, and strict project `modelType` persistence.
 - Replaced raster vessel markers with fixed-size SVG vessel symbols rotated within the SVG rather than the Leaflet marker transform.
+- At Zoom 15 and above, Target markers now use local Leaflet projection to render their actual Length × Width.
 
 ## Phase 4.4 — 2026-08-22 (`29b753e`)
 

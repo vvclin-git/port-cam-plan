@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {createProjectStore} = require('./portcam-store.js');
 const {createMapController, coverageBandRanges} = require('./portcam-map.js');
+const {SYMBOL_SIZE, GEOGRAPHIC_ZOOM} = require('./portcam-vessel-symbol.js');
 
 function fakeLeaflet() {
   class Layer { addTo(parent) { parent.addLayer(this); return this; } }
@@ -130,4 +131,32 @@ test('Camera placement preview is temporary, follows FOV mode, and cleans up map
   controller.clearCameraPlacementPreview(); assert.equal([...map.layers].some(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview)), false);
   controller.setCameraPlacementPreview(draft); assert.ok([...map.layers].some(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview)));
   controller.destroy(); assert.equal(map.events.mousemove, undefined); assert.equal([...map.layers].some(group => [...(group.layers || [])].some(layer => layer.__portcamPlacementPreview)), false);
+});
+
+test('zoomend switches Target icons to local geographic Length × Width without Store mutation', () => {
+  const store=createProjectStore({settings:{planningTargetHeightM:2},cameras:[cam('a',22.60)],targets:[target('small',22.601,{modelType:'small-vessel',lengthM:30,widthM:10}),target('large',22.602,{modelType:'large-vessel',lengthM:300,widthM:48,headingDeg:90})]}, {idFactory:()=> 'generated'});
+  const map=fakeMap(); map.latLngToLayerPoint=value=>({x:value.lng*100000,y:value.lat*100000});
+  const controller=createMapController({map,leaflet:fakeLeaflet(),store}); store.subscribe(state=>controller.sync(state)); controller.sync(store.getState());
+  map.setZoom(GEOGRAPHIC_ZOOM - 1); map.events.zoomend();
+  const before=store.getState(), smallBefore=controller.getTargetLayerSnapshot('small'), largeBefore=controller.getTargetLayerSnapshot('large');
+  assert.deepEqual(smallBefore.iconSize,[SYMBOL_SIZE,SYMBOL_SIZE]); assert.deepEqual(largeBefore.iconSize,[SYMBOL_SIZE,SYMBOL_SIZE]);
+  map.setZoom(GEOGRAPHIC_ZOOM); map.events.zoomend();
+  const smallAfter=controller.getTargetLayerSnapshot('small'), largeAfter=controller.getTargetLayerSnapshot('large');
+  assert.ok(smallAfter.iconSize[1] > smallAfter.iconSize[0]); assert.ok(largeAfter.iconSize[1] > largeAfter.iconSize[0]); assert.ok(largeAfter.iconSize[1] > smallAfter.iconSize[1]);
+  assert.deepEqual(store.getState().history,before.history); assert.equal(store.getState().targetsById.large.revision,before.targetsById.large.revision); assert.equal(store.getState().dirty,before.dirty);
+  map.setZoom(GEOGRAPHIC_ZOOM - 1); map.events.zoomend(); assert.deepEqual(controller.getTargetLayerSnapshot('large').iconSize,[SYMBOL_SIZE,SYMBOL_SIZE]);
+  controller.destroy(); assert.equal(map.events.zoomend,undefined);
+});
+
+test('zoomend keeps geographic Target icons when one-metre layer coordinates would round together', () => {
+  const store=createProjectStore({settings:{planningTargetHeightM:2},cameras:[],targets:[target('t',22.601,{modelType:'small-vessel',lengthM:30,widthM:10})]}, {idFactory:()=> 'generated'});
+  const map=fakeMap();
+  map.latLngToLayerPoint=()=>({x:10,y:10}); // Simulates Leaflet's pixel-rounded layer point at a sub-pixel metre scale.
+  map.project=value=>({x:value.lng*100000,y:value.lat*100000});
+  const controller=createMapController({map,leaflet:fakeLeaflet(),store}); store.subscribe(state=>controller.sync(state)); controller.sync(store.getState());
+  map.setZoom(GEOGRAPHIC_ZOOM); map.events.zoomend();
+  assert.notDeepEqual(controller.getTargetLayerSnapshot('t').iconSize,[SYMBOL_SIZE,SYMBOL_SIZE]);
+  map.setZoom(GEOGRAPHIC_ZOOM + 1); map.events.zoomend();
+  assert.notDeepEqual(controller.getTargetLayerSnapshot('t').iconSize,[SYMBOL_SIZE,SYMBOL_SIZE]);
+  controller.destroy();
 });

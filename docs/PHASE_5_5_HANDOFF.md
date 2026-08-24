@@ -4,6 +4,8 @@ Phase 5.5 adds the `small-vessel` and `large-vessel` Target model catalog, brows
 
 Target symbols use a small SVG factory inside `L.DivIcon`: hull, bridge, and Heading rotation remain inside the SVG, while Leaflet retains marker positioning. The marker box is fixed at 40 × 40 px. The catalog is the single source for the two hull profiles and bridge proportions; it does not add a generic vessel class or embed visual data into a Project file.
 
+At Zoom 15 and above, the same symbols enter geographic mode: Leaflet's local projection converts each Target's actual `lengthM × widthM` to pixels. Zooming is UI-only; it changes no Store state, revision, history, dirty state, or Observation.
+
 Project Settings includes a Target Defaults form and CRUD/Import/Export controls for browser-local Target Presets. Target import/export excludes built-ins, supports Merge and Replace custom presets, and rolls Target Defaults back when a subsequent Preset write fails. Inspector Apply/Reset patches the selected unlocked Target once; Reset uses the current Target Defaults.
 
 Compatibility remains `camera-project/1.0`: legacy Targets normalize to `small-vessel` during validation. Target height is independent of `settings.planningTargetHeightM`.

@@ -18,7 +18,7 @@
   const TOP_LEVEL_WITH_MAP = TOP_LEVEL_FIELDS.concat('map');
   const SETTINGS_FIELDS = [
     'baseMapKey', 'coverageTargetDimension', 'footprintSteps', 'intersectionPlaneElevationM',
-    'planningTargetHeightM', 'surfaceVisible', 'tilePadding', 'tileZoom'
+    'planningTargetHeightM', 'surfaceVisible', 'tilePadding', 'tileZoom', 'coverageAuditDimension', 'coverageAuditMinimumTier', 'coverageAuditRequiredCameras'
   ];
   const CAMERA_FIELDS = [
     'color', 'enabled', 'focalLengthMm', 'headingDeg', 'heightM', 'heightReference',
@@ -91,6 +91,12 @@
       if (!['short', 'long'].includes(value.coverageTargetDimension)) throw new Error('settings.coverageTargetDimension 不支援。');
       settings.coverageTargetDimension = value.coverageTargetDimension;
     }
+    settings.coverageAuditDimension = Object.prototype.hasOwnProperty.call(value, 'coverageAuditDimension') ? value.coverageAuditDimension : 'width';
+    if (!['length','width','height'].includes(settings.coverageAuditDimension)) throw new Error('settings.coverageAuditDimension 不支援。');
+    settings.coverageAuditMinimumTier = Object.prototype.hasOwnProperty.call(value, 'coverageAuditMinimumTier') ? value.coverageAuditMinimumTier : 'usable';
+    if (!['robust','usable','difficult','notRecommended'].includes(settings.coverageAuditMinimumTier)) throw new Error('settings.coverageAuditMinimumTier 不支援。');
+    settings.coverageAuditRequiredCameras = Object.prototype.hasOwnProperty.call(value, 'coverageAuditRequiredCameras') ? integer(value.coverageAuditRequiredCameras, 'settings.coverageAuditRequiredCameras') : 1;
+    if (settings.coverageAuditRequiredCameras < 1) throw new Error('settings.coverageAuditRequiredCameras 必須至少為 1。');
     if (Object.prototype.hasOwnProperty.call(value, 'planningTargetHeightM')) settings.planningTargetHeightM = positive(value.planningTargetHeightM, 'settings.planningTargetHeightM');
     if (Object.prototype.hasOwnProperty.call(value, 'surfaceVisible')) settings.surfaceVisible = validateBoolean(value.surfaceVisible, 'settings.surfaceVisible');
     if (Object.prototype.hasOwnProperty.call(value, 'tileZoom')) {
