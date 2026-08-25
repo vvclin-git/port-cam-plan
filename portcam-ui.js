@@ -1374,6 +1374,7 @@
       const state = store.getState();
       const id = store.addTarget({name: `Target ${state.targetOrder.length + 1}`, anchor: 'bottom-center', lifecycle: 'placed', visible: true, enabled: true, locked: false, ...targetDraft});
       store.selectTarget(id);
+      renderWorkspace(store.getState());
       setInteractionMode('navigate');
       setTargetError('');
       showObservation();
@@ -1454,6 +1455,7 @@
         clearPendingCameraPlacement();
         const id = store.addCamera(cameraDraft);
         store.selectCamera(id);
+        renderWorkspace(store.getState());
         store.setObjectManagerTab('cameras');
         store.setInspectorTab('details');
         setInteractionMode('navigate');
