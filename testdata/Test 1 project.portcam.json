@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "camera-project/1.0",
+  "projectId": "project-3f023e71-de15-4d4b-824b-3ebde6a1f581",
+  "name": "Untitled project",
+  "settings": {
+    "baseMapKey": "osm",
+    "coverageTargetDimension": "short",
+    "coverageAuditDimension": "width",
+    "coverageAuditMinimumTier": "usable",
+    "coverageAuditRequiredCameras": 1,
+    "planningTargetHeightM": 2,
+    "surfaceVisible": true,
+    "tileZoom": 18
+  },
+  "cameras": [
+    {
+      "id": "camera-a",
+      "name": "Camera A",
+      "position": {
+        "latitudeDeg": 22.6082,
+        "longitudeDeg": 120.2824
+      },
+      "heightM": 10,
+      "tiltDownDeg": 2,
+      "sensorWidthMm": 7.2,
+      "sensorHeightMm": 4.05,
+      "widthPx": 2560,
+      "heightPx": 1440,
+      "focalLengthMm": 35,
+      "headingDeg": 90,
+      "color": "#2563eb",
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "revision": 0
+    },
+    {
+      "id": "edfdd651-b1b8-40bc-acaf-6bda65b8a664",
+      "name": "Camera 2",
+      "position": {
+        "latitudeDeg": 22.6101691698512,
+        "longitudeDeg": 120.29492532133271
+      },
+      "heightM": 10,
+      "tiltDownDeg": 2,
+      "sensorWidthMm": 7.2,
+      "sensorHeightMm": 4.05,
+      "widthPx": 2560,
+      "heightPx": 1440,
+      "focalLengthMm": 35,
+      "headingDeg": 207,
+      "color": "#7c3aed",
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "revision": 2
+    },
+    {
+      "id": "fb7958dd-2220-4c63-a394-6a7bb506c89e",
+      "name": "Camera 3",
+      "position": {
+        "latitudeDeg": 22.602471340722346,
+        "longitudeDeg": 120.29361527014062
+      },
+      "heightM": 10,
+      "tiltDownDeg": 2,
+      "sensorWidthMm": 7.2,
+      "sensorHeightMm": 4.05,
+      "widthPx": 2560,
+      "heightPx": 1440,
+      "focalLengthMm": 35,
+      "headingDeg": 35.37101832637347,
+      "color": "#0891b2",
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "revision": 0
+    }
+  ],
+  "targets": [
+    {
+      "id": "036d78f5-836a-46b5-8b53-b2ed60ce632e",
+      "name": "Target 1",
+      "position": {
+        "latitudeDeg": 22.610390222737458,
+        "longitudeDeg": 120.29258558682486
+      },
+      "lengthM": 30,
+      "widthM": 10,
+      "heightM": 12,
+      "headingDeg": 244.10083547084275,
+      "modelType": "small-vessel",
+      "anchor": "bottom-center",
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "revision": 0
+    },
+    {
+      "id": "bccccf2d-025d-4267-9d90-7075210ee7d0",
+      "name": "Target 2",
+      "position": {
+        "latitudeDeg": 22.60823237256202,
+        "longitudeDeg": 120.2938512392338
+      },
+      "lengthM": 30,
+      "widthM": 10,
+      "heightM": 12,
+      "headingDeg": 255.129126866791,
+      "modelType": "small-vessel",
+      "anchor": "bottom-center",
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "revision": 0
+    },
+    {
+      "id": "2c16724f-2748-4336-a1cd-5e19967635eb",
+      "name": "Target 3",
+      "position": {
+        "latitudeDeg": 22.604589686309094,
+        "longitudeDeg": 120.29530995726446
+      },
+      "lengthM": 30,
+      "widthM": 10,
+      "heightM": 12,
+      "headingDeg": 345.37467543326574,
+      "modelType": "small-vessel",
+      "anchor": "bottom-center",
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "revision": 0
+    }
+  ],
+  "map": {
+    "center": {
+      "latitudeDeg": 22.609764311994873,
+      "longitudeDeg": 120.29433836975497
+    },
+    "zoom": 16
+  }
+}
