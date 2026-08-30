@@ -32,3 +32,9 @@ test('geographic symbols use real Target length and width while retaining SVG he
   assert.match(icon.html, /rotate\(90\)/);
   assert.match(icon.html, /is-geographic/);
 });
+
+test('small geographic symbols retain their real SVG size inside a usable drag hit area', () => {
+  const icon = Symbols.iconOptions({modelType:'small-vessel',lengthM:30,widthM:10}, {mode:'geographic',widthPx:.6,heightPx:1.7});
+  assert.deepEqual(icon.iconSize,[Symbols.MIN_DRAG_HIT_SIZE,Symbols.MIN_DRAG_HIT_SIZE]);
+  assert.match(icon.html,/width="0.6" height="1.7"/);
+});

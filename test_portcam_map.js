@@ -7,7 +7,7 @@ const {SYMBOL_SIZE, GEOGRAPHIC_ZOOM} = require('./portcam-vessel-symbol.js');
 function fakeLeaflet() {
   class Layer { addTo(parent) { parent.addLayer(this); return this; } }
   class Group extends Layer { constructor() { super(); this.layers = new Set(); } addLayer(layer) { this.layers.add(layer); return this; } removeLayer(layer) { this.layers.delete(layer); } bringToFront() {} }
-  class Marker extends Layer { constructor(value, options={}) { super(); this.value=value; this.events={}; this.options={...options}; this.tooltip={}; this.tooltipOpen=false; this.opacity=1; this.setIconCalls=0; this.dragging={enabled:false,enable:()=>{this.dragging.enabled=true;},disable:()=>{this.dragging.enabled=false;}}; } bindTooltip(content, options={}){ this.tooltip={content, options}; return this; } setTooltipContent(content){this.tooltip.content=content; return this;} openTooltip(){this.tooltipOpen=true; return this;} closeTooltip(){this.tooltipOpen=false; return this;} on(name, fn){this.events[name]=fn; return this;} off(name){delete this.events[name]; return this;} setLatLng(value){this.value=value; return this;} getLatLng(){return this.value;} setOpacity(value){this.opacity=value; return this;} setIcon(icon){this.setIconCalls++; this.options.icon=icon; return this;} }
+  class Marker extends Layer { constructor(value, options={}) { super(); this.value=value; this.events={}; this.options={...options}; this.tooltip={}; this.tooltipOpen=false; this.opacity=1; this.setIconCalls=0; this.dragging=options.draggable ? {enabled:false,enable:()=>{this.dragging.enabled=true;},disable:()=>{this.dragging.enabled=false;}} : undefined; } bindTooltip(content, options={}){ this.tooltip={content, options}; return this; } setTooltipContent(content){this.tooltip.content=content; return this;} openTooltip(){this.tooltipOpen=true; return this;} closeTooltip(){this.tooltipOpen=false; return this;} on(name, fn){this.events[name]=fn; return this;} off(name){delete this.events[name]; return this;} setLatLng(value){this.value=value; return this;} getLatLng(){return this.value;} setOpacity(value){this.opacity=value; return this;} setIcon(icon){this.setIconCalls++; this.options.icon=icon; return this;} }
   class Shape extends Layer { constructor(points, options={}) { super(); this.points=points; this.options=options; } getBounds(){return {points:this.points};} }
   return {latLng(a,b) { return typeof a === 'object' ? {lat:a.lat, lng:a.lng} : {lat:a,lng:b}; }, layerGroup(){return new Group();}, marker(v, options){return new Marker(v, options);}, divIcon(options){return options;}, circleMarker(v, options){return new Marker(v, options);}, polygon(v, options){return new Shape(v, options);}, polyline(v, options){return new Shape(v, options);} };
 }
@@ -79,20 +79,20 @@ test('Camera and Target share one drag preview/commit contract and map projectio
   store.patchTarget('t', {locked:false}); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 2);
   store.patchTarget('t', {visible:false}); assert.equal(targetMarker.options.draggable, false); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 2);
   store.patchTarget('t', {visible:true, enabled:false}); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 3);
-  store.selectTarget(null); assert.equal(targetMarker.options.draggable, false); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 4);
+  store.selectTarget(null); assert.equal(targetMarker.options.draggable, true); assert.equal(targetMarker.setIconCalls, iconCallsBeforeStyleChange + 4);
   controller.destroy();
 });
 
-test('focusedEntity controls marker drag and FOV emphasis independently from Active and Current selections', () => {
+test('direct marker drag is available in Navigate and focuses the entity without changing FOV emphasis semantics', () => {
   const store = createProjectStore({settings:{planningTargetHeightM:2}, cameras:[cam('a',22.60),cam('b',22.61)], targets:[target('t',22.601)]}, {idFactory:()=> 'generated'});
   const map = fakeMap(), controller = createMapController({map,leaflet:fakeLeaflet(),store}); store.subscribe(state => controller.sync(state)); controller.sync(store.getState());
   const cameraA = markerFor(map, 'a'), cameraB = markerFor(map, 'b'), targetMarker = markerFor(map, 't');
   store.clearFocusedEntity();
-  assert.equal(cameraA.options.draggable, false); assert.equal(cameraB.options.draggable, false); assert.equal(targetMarker.options.draggable, false);
+  assert.equal(cameraA.options.draggable, true); assert.equal(cameraB.options.draggable, true); assert.equal(targetMarker.options.draggable, true);
   assert.ok(controller.getCameraLayerSnapshot('a').bandLayerCount > 0); assert.equal(controller.getCameraLayerSnapshot('a').bandLayerCount, controller.getCameraLayerSnapshot('b').bandLayerCount);
-  store.setFocusedEntity('camera', 'b'); assert.equal(cameraA.options.draggable, false); assert.equal(cameraB.options.draggable, true);
+  store.setFocusedEntity('camera', 'b'); assert.equal(cameraA.options.draggable, true); assert.equal(cameraB.options.draggable, true);
   store.setFocusedEntity('target', 't'); assert.equal(targetMarker.options.draggable, true); assert.equal(store.getState().uiState.selectedCameraId, 'b'); assert.equal(store.getState().uiState.selectedTargetId, 't');
-  store.clearFocusedEntity(); assert.equal(targetMarker.options.draggable, false); assert.equal(controller.getTargetLayerSnapshot('t').linePresent, true);
+  store.clearFocusedEntity(); targetMarker.events.dragstart(); assert.deepEqual(store.getState().uiState.focusedEntity,{kind:'target',id:'t'}); targetMarker.events.dragend(); assert.equal(targetMarker.options.draggable, true); assert.equal(controller.getTargetLayerSnapshot('t').linePresent, true);
   controller.destroy();
 });
 
@@ -144,6 +144,10 @@ test('zoomend switches Target icons to local geographic Length × Width without 
   const smallAfter=controller.getTargetLayerSnapshot('small'), largeAfter=controller.getTargetLayerSnapshot('large');
   assert.ok(smallAfter.iconSize[1] > smallAfter.iconSize[0]); assert.ok(largeAfter.iconSize[1] > largeAfter.iconSize[0]); assert.ok(largeAfter.iconSize[1] > smallAfter.iconSize[1]);
   assert.deepEqual(store.getState().history,before.history); assert.equal(store.getState().targetsById.large.revision,before.targetsById.large.revision); assert.equal(store.getState().dirty,before.dirty);
+  const smallMarker=markerFor(map,'small'), iconCallsBeforeDrag=smallMarker.setIconCalls;
+  smallMarker.events.dragstart(); smallMarker.setLatLng({lat:23.1,lng:120.4}); smallMarker.events.drag({target:smallMarker});
+  assert.equal(smallMarker.setIconCalls,iconCallsBeforeDrag); assert.equal(store.getState().preview.kind,'target');
+  smallMarker.events.dragend(); assert.equal(store.getState().preview,null); assert.equal(store.getState().targetsById.small.revision,before.targetsById.small.revision+1); assert.equal(smallMarker.setIconCalls,iconCallsBeforeDrag+1);
   map.setZoom(GEOGRAPHIC_ZOOM - 1); map.events.zoomend(); assert.deepEqual(controller.getTargetLayerSnapshot('large').iconSize,[SYMBOL_SIZE,SYMBOL_SIZE]);
   controller.destroy(); assert.equal(map.events.zoomend,undefined);
 });

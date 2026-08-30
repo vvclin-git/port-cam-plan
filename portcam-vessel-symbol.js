@@ -9,6 +9,7 @@
 
   const SYMBOL_SIZE = 20;
   const GEOGRAPHIC_ZOOM = 10;
+  const MIN_DRAG_HIT_SIZE = 24;
   function svgNumber(value) { return Number(value.toFixed(6)); }
   function normalizeHeading(value) { const n = Number(value); return Number.isFinite(n) ? ((n % 360) + 360) % 360 : 0; }
   function model(target) { return Catalog.get(target?.modelType) || Catalog.get('small-vessel'); }
@@ -38,7 +39,9 @@
     if (!Number.isFinite(widthPx) || widthPx <= 0 || !Number.isFinite(heightPx) || heightPx <= 0) throw new Error('Vessel icon dimensions must be positive pixels.');
     const classes = ['target-marker']; if (options?.selected) classes.push('is-selected'); if (target?.locked) classes.push('is-locked'); if (target?.enabled === false) classes.push('is-disabled'); if (options?.preview) classes.push('is-preview');
     if (geographic) classes.push('is-geographic');
-    return {className: 'entity-marker-wrapper', html: `<span class="${classes.join(' ')}">${svg(target, options)}</span>`, iconSize: [widthPx, heightPx], iconAnchor: [widthPx / 2, heightPx / 2]};
+    const hitWidth = geographic ? Math.max(widthPx, MIN_DRAG_HIT_SIZE) : widthPx;
+    const hitHeight = geographic ? Math.max(heightPx, MIN_DRAG_HIT_SIZE) : heightPx;
+    return {className: 'entity-marker-wrapper', html: `<span class="${classes.join(' ')}">${svg(target, options)}</span>`, iconSize: [hitWidth, hitHeight], iconAnchor: [hitWidth / 2, hitHeight / 2]};
   }
-  return {SYMBOL_SIZE, GEOGRAPHIC_ZOOM, normalizeHeading, geometry, svg, iconOptions};
+  return {SYMBOL_SIZE, GEOGRAPHIC_ZOOM, MIN_DRAG_HIT_SIZE, normalizeHeading, geometry, svg, iconOptions};
 }));

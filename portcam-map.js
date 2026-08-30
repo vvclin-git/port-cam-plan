@@ -27,15 +27,16 @@
     const canDrag = id => {
       const state = store.getState();
       const entity = getEntity(id);
-      const focused = state.uiState?.focusedEntity;
-      const focusedMatch = focused?.kind === kind && focused.id === id;
-      return Boolean(entity && state.uiState?.interactionMode === 'navigate' && focusedMatch && entity.visible !== false && entity.locked !== true && entity.position);
+      return Boolean(entity && state.uiState?.interactionMode === 'navigate' && entity.visible !== false && entity.locked !== true && entity.position);
     };
     const onDragStart = () => {
       const id = marker.__portcamEntityId;
       if (!canDrag(id)) { dragId = null; canonicalPosition = null; return; }
       dragId = id;
       canonicalPosition = clone(getEntity(id).position);
+      // A direct drag is also an explicit edit intent: focus the entity before
+      // previewing its new position, without requiring a separate preliminary click.
+      store.setFocusedEntity(kind, id);
     };
     const onDrag = event => {
       if (!dragId || !canDrag(dragId)) return;
@@ -56,6 +57,7 @@
     marker.on('dragend', onDragEnd);
     return {
       canDrag,
+      isDragging() { return dragId !== null; },
       getCanonicalPosition() { return clone(canonicalPosition); },
       destroy() { marker.off?.('dragstart', onDragStart); marker.off?.('drag', onDrag); marker.off?.('dragend', onDragEnd); }
     };
@@ -173,7 +175,9 @@
     function ensureCamera(camera) {
       if (cameraLayers.has(camera.id)) return cameraLayers.get(camera.id);
       const group = layerGroup();
-      const marker = L.marker(point(L, camera.position), {draggable: false, pane: PANE_NAMES.camera, bubblingMouseEvents: false}).bindTooltip(camera.name || camera.id, entityTooltip());
+      // Leaflet only creates marker.dragging during construction when this is true.
+      // syncCamera immediately disables it unless this Camera is the focused, movable entity.
+      const marker = L.marker(point(L, camera.position), {draggable: true, pane: PANE_NAMES.camera, bubblingMouseEvents: false}).bindTooltip(camera.name || camera.id, entityTooltip());
       marker.__portcamEntityId = camera.id;
       marker.on('click', event => { event?.originalEvent?.stopPropagation?.(); store.selectCamera(camera.id); onCameraSelect?.(camera.id); });
       const record = {group, marker, envelope: [], bands: [], centerline: null, interaction: null, labelVisible: labels.camera};
@@ -190,7 +194,7 @@
       if (!map.hasLayer || !map.hasLayer(record.group)) record.group.addTo(map);
       const center = point(L, camera.position);
       record.marker.setLatLng(center); record.marker.setTooltipContent?.(camera.name || camera.id); record.marker.setOpacity(camera.enabled === false ? .42 : 1); setLabel(record, 'camera', labels.camera);
-      const canDrag = selected && camera.visible !== false && camera.locked !== true && state.uiState.interactionMode === 'navigate';
+      const canDrag = camera.visible !== false && camera.locked !== true && state.uiState.interactionMode === 'navigate';
       record.marker.options.draggable = canDrag;
       if (record.marker.dragging) canDrag ? record.marker.dragging.enable() : record.marker.dragging.disable();
       renderFov(record, camera, state);
@@ -256,7 +260,8 @@
       if (targetLayers.has(target.id)) return targetLayers.get(target.id);
       const group = layerGroup();
       const projection = targetProjection(target);
-      const marker = L.marker(point(L, target.position), {draggable: false, pane: PANE_NAMES.target, bubblingMouseEvents: false, icon: targetIcon(target, false, false, projection)}).bindTooltip(target.name || target.id, entityTooltip());
+      // See ensureCamera: initialize Leaflet's handler once, then gate it in syncTarget.
+      const marker = L.marker(point(L, target.position), {draggable: true, pane: PANE_NAMES.target, bubblingMouseEvents: false, icon: targetIcon(target, false, false, projection)}).bindTooltip(target.name || target.id, entityTooltip());
       marker.__portcamEntityId = target.id;
       marker.on('click', event => { event?.originalEvent?.stopPropagation?.(); store.selectTarget(target.id); onTargetSelect?.(target.id); });
       const record = {group, marker, line: null, interaction: null, labelVisible: labels.target, iconKey: targetIconKey(target, false, projection)};
@@ -270,8 +275,13 @@
       if (target.visible === false) { record.marker.options.draggable = false; record.marker.dragging?.disable?.(); removeLayer(record, 'line'); remove(record.group); return; }
       if (!map.hasLayer || !map.hasLayer(record.group)) record.group.addTo(map);
       const projection = targetProjection(target), iconKey = targetIconKey(target, selected, projection);
-      record.marker.setLatLng(point(L, target.position)); record.marker.setTooltipContent?.(target.name || target.id); record.marker.setOpacity(target.enabled === false ? .45 : 1); if (record.iconKey !== iconKey) { record.marker.setIcon?.(targetIcon(target, selected, false, projection)); record.iconKey = iconKey; } setLabel(record, 'target', labels.target);
-      const canDrag = selected && target.visible !== false && target.locked !== true && state.uiState.interactionMode === 'navigate';
+      const dragActive = record.interaction?.isDragging?.();
+      // Replacing a Leaflet marker icon while its drag handler owns the current
+      // DOM node cancels the gesture before dragend. Geographic icon dimensions
+      // vary slightly with latitude and focus styling can change on dragstart,
+      // so defer either replacement until dragend commits the gesture.
+      record.marker.setLatLng(point(L, target.position)); record.marker.setTooltipContent?.(target.name || target.id); record.marker.setOpacity(target.enabled === false ? .45 : 1); if (record.iconKey !== iconKey && !dragActive) { record.marker.setIcon?.(targetIcon(target, selected, false, projection)); record.iconKey = iconKey; } setLabel(record, 'target', labels.target);
+      const canDrag = target.visible !== false && target.locked !== true && state.uiState.interactionMode === 'navigate';
       record.marker.options.draggable = canDrag;
       if (record.marker.dragging) canDrag ? record.marker.dragging.enable() : record.marker.dragging.disable();
       removeLayer(record, 'line');
