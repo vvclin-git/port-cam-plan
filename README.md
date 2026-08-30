@@ -85,7 +85,7 @@ Sensor active area 是 optical-format 工程近似值；正式設計應以攝影
 
 ## Camera Scene JSON 匯出
 
-側欄的「Ray Casting 測試匯出」會依按鈕當下的 Camera marker、Camera 控制參數、光學參數、目前底圖與 tile zoom，產生版本化的 `camera-scene/1.1` JSON。可下載 `camera-scene-YYYYMMDD-HHmmss.json`，或複製完整 JSON 給獨立 ray-casting 程式；App 只輸出 manifest，不下載或內嵌 PNG／JPEG 圖磚。
+側欄的 Camera Scene 匯出會依按鈕當下的 Camera marker、Camera 控制參數、光學參數、目前底圖與 tile zoom，產生版本化的 `camera-scene/1.1` JSON。可下載 `camera-scene-YYYYMMDD-HHmmss.json`，或複製完整 JSON 供外部分析使用；App 只輸出 manifest，不下載或內嵌 PNG／JPEG 圖磚。
 
 - `camera.position` 記錄 `[latitudeDeg, longitudeDeg]` 語意的 WGS84 位置、相對交平面高度與 `heightReference: "intersection-plane"`。
 - `camera.orientation.headingDeg` 以真北為 0°、順時針增加並正規化到 `[0, 360)`；`tiltDownDeg` 正值向下；第一版 `rollDeg` 固定為 0°。
@@ -104,22 +104,6 @@ Sensor active area 是 optical-format 工程近似值；正式設計應以攝影
 - Tile 服務斷線時仍可產生 JSON，因為匯出不依賴圖磚成功載入。外部程式下載時應保留來源 attribution、使用可控 cache、對暫時性錯誤採有限次數與退避 retry，並遵守服務的 rate limit；不可把 Cookie、Token、Authorization header、Proxy credential 或瀏覽器憑證放入 JSON。
 - 若 ray 落在 manifest 外，外部程式應回傳 `tile-not-in-manifest`，不可誤判成 `no-intersection`、`land` 或 `water`。
 
-## Ray Casting 圖磚色彩水域測試工具
-
-目前分支已提供獨立的 [`ray_cast_test.py`](./ray_cast_test.py)。它讀取上述
-`camera-scene/1.1`，以圖磚 RGB、可調式 CIELAB CIE76 ΔE、多個水域參考色及選用
-HSV gate 產生 `water`／`non-water`／`unknown`。Tkinter/Pillow UI 的顏色設定變更
-只會重新分類記憶體中的樣本，不重新建立 rays、地面交點或下載圖磚。
-
-```powershell
-python -m pip install -r requirements-ray-cast.txt
-python ray_cast_test.py camera-scene.json --ui
-```
-
-CLI、profile schema、輸出檔案與驗收邊界見
-[`docs/RAY_CAST_WATER_COLOR.md`](./docs/RAY_CAST_WATER_COLOR.md)。此工具只供快速驗證，
-不取代 GeoJSON、語意分割或人工檢查。
-
 ## Phase 0 計算契約與測試
 
 [`portcam-core.js`](./portcam-core.js) 是不依賴 DOM／Leaflet 的純計算核心，頁面 adapter 與 Node golden tests 共用它。正式計算模型為 `spherical-v1`；`tiltDownDeg` 正值向下，Camera height 使用 `heightReference: "intersection-plane"`，Scene 另記錄 `intersectionPlaneElevationM` 與 `verticalDatum: "local-planning-datum"`。
@@ -127,13 +111,11 @@ CLI、profile schema、輸出檔案與驗收邊界見
 - Project schema 是 `camera-project/1.0`；Observation 預設是 derived runtime cache，不是必要持久資料。
 - Camera Scene export 維持 `camera-scene/1.1` 與 top-level `camera`，不改為 `cameras[]`。
 - Tile selection 的有效距離是 `min(horizonDistanceM, 30000)`，並保留 `hardMaximumRayDistanceM: 30000`。
-- Ray-casting cache 使用 `.tile-cache/<tile-source-hash>/<z>/<x>/<y>.png`；舊的無來源路徑不會被讀取。
 
 Phase 0 回歸命令：
 
 ```powershell
 node --test test_portcam_core.js
-python -m unittest -v test_ray_cast_test.py
 node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const a=h.indexOf('<script>',h.indexOf('leaflet.js'));const b=h.indexOf('</script>',a);new Function(h.slice(a+8,b));console.log('inline script syntax ok')"
 ```
 
@@ -153,7 +135,6 @@ Phase 1 回歸：
 
 ```powershell
 node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js
-python -m unittest -v test_ray_cast_test.py
 ```
 
 ## Phase 3 App Shell 與核心工作區
