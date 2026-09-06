@@ -31,6 +31,9 @@
 
 - Added Target model catalog, browser-local Target Defaults and Target Preset Library, including Apply／Reset and Merge／Replace preset transfer.
 - Added SVG vessel symbols with heading-aware projection, and two-stage Target placement; legacy Targets normalize to `small-vessel` while preserving `camera-project/1.0`.
+- Added Target Defaults/Preset Library controls, atomic Target Library import/export, Target Inspector Apply/Reset, and strict project `modelType` persistence.
+- Replaced raster vessel markers with fixed-size SVG vessel symbols rotated within the SVG rather than the Leaflet marker transform.
+- At Zoom 15 and above, Target markers use local Leaflet projection to render their actual Length × Width.
 
 ## Phase 5.4 — 2026-08-23 (`d56e0f5`)
 
@@ -48,12 +51,6 @@
 ## Phase 5.1 — 2026-08-22 (`2dfb027`)
 
 - Added browser-local Camera Defaults with validated storage, Project Settings editing and Inspector Reset semantics; Project／Scene persistence contracts remain separate.
-
-## Phase 5.5 — 2026-08-24
-
-- Added Target Defaults/Preset Library controls, atomic Target Library import/export, Target Inspector Apply/Reset, and strict project `modelType` persistence.
-- Replaced raster vessel markers with fixed-size SVG vessel symbols rotated within the SVG rather than the Leaflet marker transform.
-- At Zoom 15 and above, Target markers now use local Leaflet projection to render their actual Length × Width.
 
 ## Phase 4.4 — 2026-08-22 (`29b753e`)
 

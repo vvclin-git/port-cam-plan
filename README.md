@@ -20,7 +20,7 @@ Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、�
 
 ## Project、Defaults、Presets 與匯出
 
-Project Settings 包含 Camera／Target Defaults、Preset Library 與 Coverage Requirements。Camera 與 Target 都支援建立、載入、套用、更新、重新命名、複製、刪除及 Merge／Replace Import／Export Presets；Inspector 的 Apply／Reset 以一次 transaction 套用目前選定的 Preset，Reset 代表恢復目前的 browser-local Defaults。Preset 與 Defaults 的儲存失敗不應破壞既有有效資料。
+Project Settings UI 可管理 Camera／Target Defaults、Preset Library 與 Coverage Requirements；其中 Defaults 與 Preset Library 是 browser-local，不是 Project 持久資料。Camera 與 Target 都支援建立、載入、套用、更新、重新命名、複製、刪除及 Merge／Replace Import／Export Presets；Inspector 的 Apply／Reset 以一次 transaction 套用目前選定的 Preset，Reset 代表恢復目前的 browser-local Defaults。Preset 與 Defaults 的儲存失敗不應破壞既有有效資料。
 
 Top Bar 的 Project menu 支援 New Project、Open Project、Save Project As 與 Rename。New／Open 遇到 dirty Project 時會提供 Save、Discard、Cancel；Open 會先完整驗證檔案，再以原子方式替換目前 Project。
 
