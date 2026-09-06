@@ -60,9 +60,15 @@
             <div class="map-fov-control" id="mapFovControl">
               <span class="map-fov-label">FOV display</span>
               <div class="map-fov-segmented" role="group" aria-label="FOV display">
-                <button class="map-fov-button" type="button" data-fov-color-mode="camera" aria-pressed="false"><span class="fov-label-wide">Camera colors</span><span class="fov-label-narrow" aria-hidden="true">Camera</span></button>
-                <button class="map-fov-button" type="button" data-fov-color-mode="coverage" aria-pressed="true"><span class="fov-label-wide">Pixel coverage</span><span class="fov-label-narrow" aria-hidden="true">Coverage</span></button>
+                <button class="map-fov-button" type="button" data-fov-color-mode="camera" aria-label="Camera colors" aria-pressed="false"><span class="fov-label-wide">Camera colors</span><span class="fov-label-narrow" aria-hidden="true">Camera</span></button>
+                <button class="map-fov-button" type="button" data-fov-color-mode="coverage" aria-label="Pixel coverage" aria-pressed="true"><span class="fov-label-wide">Pixel coverage</span><span class="fov-label-narrow" aria-hidden="true">Coverage</span></button>
               </div>
+            </div>
+            <div id="cameraOpacityControl" class="camera-opacity-control" hidden>
+              <label for="cameraFillOpacity">Fill opacity</label>
+              <input id="cameraFillOpacity" type="range" min="0" max="100" step="1" value="16" aria-describedby="cameraFillOpacityValue" />
+              <output id="cameraFillOpacityValue" for="cameraFillOpacity">16%</output>
+              <button id="cameraFillOpacityReset" type="button" class="action-button" aria-label="Reset fill opacity to default">Reset</button>
             </div>
             <div class="map-settings-anchor" id="mapSettingsAnchor">
               <button class="toolbar-button" id="mapSettingsToggle" type="button" aria-expanded="false" aria-controls="mapSettingsPopover">Map Settings</button>
@@ -178,6 +184,7 @@
       if (typeof L === 'undefined') { mapError.style.display = 'grid'; return; }
       const map = L.map('map', {zoomControl: false, scrollWheelZoom: false}).setView([22.6108, 120.2890], 13);
       L.control.zoom({position: 'bottomleft'}).addTo(map);
+      L.control.scale({imperial: false, position: 'bottomright'}).addTo(map);
       let storage = null;
       try { storage = window.localStorage; } catch (error) { storage = {getItem() { throw error; }, setItem() { throw error; }}; }
       const cameraDefaultsRepository = window.PortCamCameraDefaults.createRepository({storage});

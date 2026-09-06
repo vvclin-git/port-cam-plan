@@ -63,9 +63,17 @@
     };
   }
 
+  const DEFAULT_FILL_OPACITY = 0.16;
+  function cameraFillOpacity(value, focused, preview) {
+    const base = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : DEFAULT_FILL_OPACITY;
+    return Math.min(1, base * (focused ? 1.5 : 1)) * (preview ? 0.4 : 1);
+  }
+
   function coverageBandRanges(camera, settings) {
     try {
       const planningTargetHeightM = Number(settings?.planningTargetHeightM || 2);
+      const referenceSizeM = settings?.pixelCoverageReferenceSizeM ?? planningTargetHeightM;
+      if (!Number.isFinite(referenceSizeM) || referenceSizeM <= 0) return [];
       const optics = Core.computeOptics(camera);
       const horizon = Core.computePlanningHorizon(camera.heightM, planningTargetHeightM);
       const envelope = Core.computeGroundEnvelope(camera, optics, {horizonDistanceM: horizon.distanceM});
@@ -75,9 +83,9 @@
       if (!Number.isFinite(near) || !Number.isFinite(far) || far <= near) return [];
       const clamp = value => Math.max(near, Math.min(far, Number(value)));
       const boundaries = [near,
-        Core.rangeForPixels(planningTargetHeightM, camera.focalLengthMm, optics.pixelPitchMm, 32),
-        Core.rangeForPixels(planningTargetHeightM, camera.focalLengthMm, optics.pixelPitchMm, 16),
-        Core.rangeForPixels(planningTargetHeightM, camera.focalLengthMm, optics.pixelPitchMm, 8),
+        Core.rangeForPixels(referenceSizeM, camera.focalLengthMm, optics.pixelPitchMm, 32),
+        Core.rangeForPixels(referenceSizeM, camera.focalLengthMm, optics.pixelPitchMm, 16),
+        Core.rangeForPixels(referenceSizeM, camera.focalLengthMm, optics.pixelPitchMm, 8),
         far].map(clamp);
       const bands = [
         {key: 'robust', color: COVERAGE_COLORS.robust},
@@ -160,7 +168,7 @@
       const previewDash = preview ? '5,5' : null;
       if (cameraMode) {
         const envelopeColor = enabled ? color : neutralColor;
-        const poly = L.polygon(sector(center, camera.headingDeg, geometry.optics.horizontalFovDeg / 2, geometry.near, geometry.far), {color: envelopeColor, weight: preview ? 1.5 : (emphasized ? 3 : 1.2), opacity: outlineOpacity, fillColor: envelopeColor, fillOpacity: enabled ? (preview ? .04 : (emphasized ? .1 : .035)) : 0, dashArray: enabled ? previewDash : '5,5', ...geometryOptions}).addTo(record.group);
+        const poly = L.polygon(sector(center, camera.headingDeg, geometry.optics.horizontalFovDeg / 2, geometry.near, geometry.far), {color: envelopeColor, weight: preview ? 1.5 : (emphasized ? 3 : 1.2), opacity: outlineOpacity, fillColor: envelopeColor, fillOpacity: enabled ? cameraFillOpacity(state.uiState?.cameraFillOpacity, emphasized, preview) : 0, dashArray: enabled ? previewDash : '5,5', ...geometryOptions}).addTo(record.group);
         record.envelope.push(poly);
         record.centerline = L.polyline([center, L.latLng(Core.destinationPoint(center, camera.headingDeg, geometry.far))], {color: envelopeColor, weight: preview ? 1 : (emphasized ? 1.4 : .8), opacity: centerlineOpacity, dashArray:'5,5', ...geometryOptions}).addTo(record.group);
       } else {
@@ -294,8 +302,10 @@
     }
     function clearTargetPlacementPreview() { targetPlacementPreviewDraft=null; if(targetPlacementPreview){remove(targetPlacementPreview.group);targetPlacementPreview=null;} }
     function renderTargetPlacementPreview() { const target=targetPlacementPreviewDraft; if(!target?.position){clearTargetPlacementPreview();return;} const projection=targetProjection(target); if(!targetPlacementPreview){const group=layerGroup();const marker=L.marker(point(L,target.position),{interactive:false,draggable:false,pane:PANE_NAMES.target,icon:targetIcon(target,false,true,projection)}).addTo(group);targetPlacementPreview={group,marker,key:''};} const rec=targetPlacementPreview,key=targetIconKey(target,false,projection);rec.marker.setLatLng(point(L,target.position));if(rec.key!==key){rec.marker.setIcon(targetIcon(target,false,true,projection));rec.key=key;} }
+    let presentationState = null;
     function sync(state) {
       if (destroyed) return;
+      presentationState = state;
       const projected = {...state, camerasById: {...state.camerasById}, targetsById: {...state.targetsById}};
       if (state.preview?.kind === 'camera' && projected.camerasById[state.preview.id]) projected.camerasById[state.preview.id] = {...projected.camerasById[state.preview.id], ...clone(state.preview.patch)};
       if (state.preview?.kind === 'target' && projected.targetsById[state.preview.id]) projected.targetsById[state.preview.id] = {...projected.targetsById[state.preview.id], ...clone(state.preview.patch)};
@@ -339,9 +349,9 @@
     function bindWheel() { map.scrollWheelZoom?.disable?.(); wheelContainer = map.getContainer?.(); if (wheelContainer?.addEventListener) wheelContainer.addEventListener('wheel', wheelZoom, {passive: false}); }
     function handleMapClick(event) { if (!destroyed && event?.latlng && onMapClick) onMapClick(event.latlng, event.originalEvent); }
     function handleMapMove(event) { if (!destroyed && event?.latlng && onMapMove) onMapMove(event.latlng, event.originalEvent); }
-    function handleZoomEnd() { if (!destroyed) sync(store.getState()); }
+    function handleZoomEnd() { if (!destroyed) sync(presentationState || store.getState()); }
     ensurePanes(); bindWheel(); map.on?.('click', handleMapClick); map.on?.('mousemove', handleMapMove); map.on?.('zoomend', handleZoomEnd);
-    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, getViewport, setViewport, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(store.getState()); }, clearCameraPlacementPreview, setTargetPlacementPreview(targetDraft) { targetPlacementPreviewDraft=targetDraft?clone(targetDraft):null; renderTargetPlacementPreview(); }, clearTargetPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); clearTargetPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); map.off?.('zoomend', handleZoomEnd); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); clearTargetPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
+    return {sync, getCameraLayerSnapshot, getTargetLayerSnapshot, getViewport, setViewport, fitCamera, fitCameraFov, fitTarget, fitCameraAndTarget, setLabelVisibility, setCameraPlacementPreview(cameraDraft) { placementPreviewDraft = cameraDraft ? clone(cameraDraft) : null; renderCameraPlacementPreview(presentationState || store.getState()); }, clearCameraPlacementPreview, setTargetPlacementPreview(targetDraft) { targetPlacementPreviewDraft=targetDraft?clone(targetDraft):null; renderTargetPlacementPreview(); }, clearTargetPlacementPreview, cancelInteraction() { store.cancelPreview(); clearCameraPlacementPreview(); clearTargetPlacementPreview(); store.setInteractionMode('navigate'); }, destroy() { if (destroyed) return; destroyed = true; map.off?.('click', handleMapClick); map.off?.('mousemove', handleMapMove); map.off?.('zoomend', handleZoomEnd); wheelContainer?.removeEventListener?.('wheel', wheelZoom, {passive: false}); clearCameraPlacementPreview(); clearTargetPlacementPreview(); cameraLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); targetLayers.forEach(record => { record.interaction?.destroy(); remove(record.group); }); cameraLayers.clear(); targetLayers.clear(); }};
   }
-  return {createMapController, createEntityMarkerInteraction, coverageBandRanges, CAMERA_COLORS, COVERAGE_COLORS, PANE_NAMES};
+  return {DEFAULT_FILL_OPACITY, cameraFillOpacity, createMapController, createEntityMarkerInteraction, coverageBandRanges, CAMERA_COLORS, COVERAGE_COLORS, PANE_NAMES};
 }));

@@ -116,6 +116,49 @@
     let mapController = args.mapController || null;
     let contextRenderKey = null;
     let overflowMenu = null;
+    let referenceDraft = null;
+    const opacityStorageKey = 'portcam.cameraFillOpacity';
+    let cameraFillOpacity = MapApi.DEFAULT_FILL_OPACITY;
+    try {
+      const raw = view.localStorage.getItem(opacityStorageKey);
+      const value = raw === null ? null : JSON.parse(raw);
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1) cameraFillOpacity = value;
+    } catch (_) { /* Browser preferences must never block the planner. */ }
+    function referenceContext(state) {
+      return `${state.projectEpoch}:${state.projectId}:${state.history.index}:${JSON.stringify(state.settings)}`;
+    }
+    function mapPresentation(state) {
+      return {...state, settings: {...state.settings, ...(referenceDraft?.valid ? {pixelCoverageReferenceSizeM: referenceDraft.value} : {})}, uiState: {...state.uiState, cameraFillOpacity}};
+    }
+    function finishReferenceEdit(commit) {
+      if (!referenceDraft) return;
+      const draft = referenceDraft;
+      referenceDraft = null;
+      const state = store.getState();
+      const current = draft.context === referenceContext(state);
+      if (commit && current && draft.valid) store.patchSettings({pixelCoverageReferenceSizeM: draft.value}, 'pixel-coverage-reference-size');
+      renderMapLegend(store.getState());
+      mapController.sync(mapPresentation(store.getState()));
+      const hint = $('referenceSizeError');
+      if (hint) hint.textContent = commit && current && !draft.valid ? 'Enter a finite size greater than 0 m.' : '';
+      scheduleLegendClamp();
+    }
+    function previewReferenceEdit(event) {
+      const state = store.getState();
+      const text = event.target.value.trim();
+      const value = Number(text);
+      referenceDraft = {context: referenceContext(state), value, valid: text !== '' && Number.isFinite(value) && value > 0};
+      event.target.setAttribute('aria-invalid', String(!referenceDraft.valid));
+      $('referenceSizeError').textContent = referenceDraft.valid ? '' : 'Enter a finite size greater than 0 m.';
+      mapController.sync(mapPresentation(state));
+      scheduleLegendClamp();
+    }
+    function setCameraFillOpacity(value) {
+      cameraFillOpacity = value;
+      try { view.localStorage.setItem(opacityStorageKey, JSON.stringify(value)); } catch (_) { /* Keep the session preference if storage fails. */ }
+      renderMapFovControl(store.getState());
+      mapController.sync(mapPresentation(store.getState()));
+    }
     let legendMarkupKey = null;
     let legendClampFrame = null;
     const legendPosition = {left: null, top: null};
@@ -1073,6 +1116,9 @@
       return `${disabledTargetNotice}<div class="comparison-table-scroll" role="region" aria-label="Camera Comparison table"><table class="comparison-table"><caption class="sr-only">Camera observations for ${escapeHtml(target.name || target.id)}</caption><thead><tr><th scope="col">Rank</th><th scope="col">Camera</th><th scope="col">Observation status</th><th scope="col">Distance</th><th scope="col">Azimuth</th><th scope="col">Target pixel size</th><th scope="col">YOLO short side</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
     function renderMapFovControl(state) {
+      if ($('cameraOpacityControl')) $('cameraOpacityControl').hidden = state.uiState.fovColorMode !== 'camera';
+      if ($('cameraFillOpacity')) { $('cameraFillOpacity').value = String(Math.round(cameraFillOpacity * 100)); $('cameraFillOpacity').setAttribute('aria-valuetext', `${Math.round(cameraFillOpacity * 100)}%`); }
+      if ($('cameraFillOpacityValue')) $('cameraFillOpacityValue').textContent = `${Math.round(cameraFillOpacity * 100)}%`;
       const mode = state.uiState.fovColorMode === 'camera' ? 'camera' : 'coverage';
       rootElement.querySelectorAll('[data-fov-color-mode]').forEach(button => {
         button.setAttribute('aria-pressed', button.dataset.fovColorMode === mode ? 'true' : 'false');
@@ -1095,7 +1141,7 @@
       const counts = coverage.counts;
       const summary = `<section class="yolo-summary" aria-label="YOLO Coverage summary"><div class="yolo-summary-heading"><strong>${escapeHtml(target.name || target.id)}</strong><span>Current Target · ${coverage.enabledCount} enabled Cameras · ${coverage.disabledCount} disabled excluded</span></div><div class="yolo-summary-grid"><div><span>≥ 32 px · Robust</span><b>${counts.robust}</b></div><div><span>16–&lt;32 px · Usable</span><b>${counts.usable}</b></div><div><span>8–&lt;16 px · Difficult</span><b>${counts.difficult}</b></div><div><span>&lt; 8 px · Not recommended</span><b>${counts.notRecommended}</b></div><div><span>Outside FOV</span><b>${counts.outsideFov}</b></div><div><span>Unavailable / Failed</span><b>${counts.unavailableFailed}</b></div></div></section>`;
       const warning = '<div class="yolo-warning result-state neutral">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div>';
-      const referenceSize = comparisonNumber(state.settings.planningTargetHeightM);
+      const referenceSize = comparisonNumber(state.settings.pixelCoverageReferenceSizeM);
       const dataNote = `<div class="yolo-data-note">Workspace table uses Current Target Observation <code>yolo.shortSidePx</code>. Map bands use Project planning reference size${referenceSize === null ? '' : ` (${referenceSize.toFixed(1)} m)`}.</div>`;
       if (!coverage.enabledCount) return `${summary}${warning}${dataNote}<div class="yolo-empty result-state neutral"><strong>No enabled Cameras</strong>Enable or create a Camera to analyze this Target.</div>`;
       const disabledTargetNotice = target.enabled === false ? '<div class="comparison-notice result-state neutral"><strong>Current Target is disabled</strong>Camera rows are retained and shown as Unavailable.</div>' : '';
@@ -1134,6 +1180,9 @@
       const workspace = els.mapWorkspace, legend = els.mapLegend;
       if (!workspace || !legend || legend.hidden) return null;
       const workspaceRect = workspace.getBoundingClientRect?.() || {width: workspace.clientWidth, height: workspace.clientHeight, left: 0, top: 0, right: workspace.clientWidth, bottom: workspace.clientHeight};
+      const controlsRect = workspace.querySelector?.('.map-top-right-controls')?.getBoundingClientRect();
+      const reservedTop = controlsRect ? Math.max(8, controlsRect.bottom - workspaceRect.top + 8) : 8;
+      legend.style.maxHeight = `${Math.max(60, workspace.clientHeight - reservedTop - 72)}px`;
       const legendRect = legend.getBoundingClientRect?.() || {width: legend.offsetWidth, height: legend.offsetHeight};
       const width = Math.max(0, Number(workspace.clientWidth) || Number(workspaceRect.width) || 0);
       const height = Math.max(0, Number(workspace.clientHeight) || Number(workspaceRect.height) || 0);
@@ -1156,7 +1205,12 @@
       const metrics = legendMetrics();
       if (!metrics || !metrics.width || !metrics.height) return;
       const maxLeft = Math.max(8, metrics.width - metrics.legendWidth - 8);
-      const maxTop = Math.max(8, metrics.height - metrics.legendHeight - 8);
+      const inspectorRect = els.inspector && !els.inspector.classList.contains('is-closed') ? els.inspector.getBoundingClientRect() : null;
+      const minLeft = inspectorRect && inspectorRect.left <= metrics.workspaceRect.left && inspectorRect.right > metrics.workspaceRect.left
+        ? Math.min(maxLeft, inspectorRect.right - metrics.workspaceRect.left + 8) : 8;
+      const topControls = metrics.workspace.querySelector('.map-top-right-controls')?.getBoundingClientRect();
+      const minTop = topControls ? Math.max(8, topControls.bottom - metrics.workspaceRect.top + 8) : 8;
+      const maxTop = Math.max(minTop, metrics.height - metrics.legendHeight - 64);
       const clamp = (value, max) => Math.max(8, Math.min(max, Number(value)));
       if (forceDefault || !legendPositionUserSet || legendPosition.left == null || legendPosition.top == null) {
         const position = legendDefaultPosition(metrics);
@@ -1166,6 +1220,8 @@
         legendPosition.left = clamp(legendPosition.left, maxLeft);
         legendPosition.top = clamp(legendPosition.top, maxTop);
       }
+      legendPosition.left = Math.max(minLeft, legendPosition.left);
+      legendPosition.top = Math.max(minTop, legendPosition.top);
       metrics.legend.style.left = `${Math.round(legendPosition.left)}px`;
       metrics.legend.style.top = `${Math.round(legendPosition.top)}px`;
     }
@@ -1238,11 +1294,15 @@
         return;
       }
       els.mapLegend.hidden = false;
-      const referenceSize = comparisonNumber(state.settings.planningTargetHeightM);
-      const markupKey = `coverage:${referenceSize == null ? '' : referenceSize}`;
+      const referenceSize = comparisonNumber(state.settings.pixelCoverageReferenceSizeM);
+      const markupKey = 'coverage';
       if (legendMarkupKey !== markupKey) {
-        els.mapLegend.innerHTML = `<button class="map-legend-title" type="button" data-legend-handle aria-label="Drag Pixel coverage legend" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">Pixel coverage</button><div class="map-legend-content"><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.robust}"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.usable}"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.difficult}"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.notRecommended}"></span>&lt; 8 px</div><div class="tiny map-legend-help">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div class="tiny map-legend-help">Based on Project planning reference size${referenceSize === null ? '' : ` (${referenceSize.toFixed(1)} m)`}.</div><button class="action-button map-legend-reset" type="button" data-legend-reset>重設位置</button></div>`;
+        els.mapLegend.innerHTML = `<button class="map-legend-title" type="button" data-legend-handle aria-label="Drag Pixel coverage legend" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">Pixel coverage</button><div class="map-legend-content"><label class="reference-size-row" for="pixelCoverageReferenceSizeM">Reference size <input id="pixelCoverageReferenceSizeM" type="number" step="any" min="0" inputmode="decimal" aria-describedby="referenceSizeHelp referenceSizeError" /> m</label><div id="referenceSizeError" class="error-text" role="status"></div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.robust}"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.usable}"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.difficult}"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.notRecommended}"></span>&lt; 8 px</div><div class="tiny map-legend-help">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div id="referenceSizeHelp" class="tiny map-legend-help">Map reference size only; actual Target dimensions drive Observation and Coverage Audit.</div><button class="action-button map-legend-reset" type="button" data-legend-reset>重設位置</button></div>`;
         legendMarkupKey = markupKey;
+      }
+      if (!referenceDraft && $('pixelCoverageReferenceSizeM')) {
+        $('pixelCoverageReferenceSizeM').value = String(referenceSize);
+        $('pixelCoverageReferenceSizeM').setAttribute('aria-invalid', 'false');
       }
       clampLegendPosition();
     }
@@ -1486,7 +1546,8 @@
 
     function render(state) {
       if (destroyed) return;
-      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContextInspector(state); renderWorkspace(state); renderMapSettings(state); renderMapFovControl(state); renderMapLegend(state); renderInteraction(state); renderProjectSettings(); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(state);
+      if (referenceDraft && referenceDraft.context !== referenceContext(state)) { referenceDraft = null; if ($('referenceSizeError')) $('referenceSizeError').textContent = ''; }
+      lastState = state; renderTopBar(state); renderPanelVisibility(state); renderRail(state); renderContextInspector(state); renderWorkspace(state); renderMapSettings(state); renderMapFovControl(state); renderMapLegend(state); renderInteraction(state); renderProjectSettings(); syncMapBaseLayer(state); syncSurfaceLayer(state); mapController.sync(mapPresentation(state));
     }
     const unsubscribe = store.subscribe(render);
 
@@ -1694,6 +1755,20 @@
     function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); if (event.target.closest?.('#cameraPresetApply')) applyInspectorPreset(); if (event.target.closest?.('#targetPresetApply')) applyTargetInspectorPreset(false); if (event.target.closest?.('#targetPresetReset')) applyTargetInspectorPreset(true); }
 
     listen(els.cameraRailItems, 'click', onCameraRailClick); listen(els.cameraRailItems, 'keydown', onCameraRailKeydown); listen(els.cameraRailItems, 'scroll', () => closeOverflowMenu()); listen(els.cameraSelect, 'change', event => { store.cancelPreview(); store.selectCamera(event.target.value); });
+    listen(els.mapLegend, 'input', event => { if (event.target.id === 'pixelCoverageReferenceSizeM') { event.stopPropagation(); previewReferenceEdit(event); } });
+    listen(els.mapLegend, 'focusout', event => { if (event.target.id === 'pixelCoverageReferenceSizeM') finishReferenceEdit(true); });
+    listen(els.mapLegend, 'keydown', event => {
+      if (event.target.id !== 'pixelCoverageReferenceSizeM') return;
+      event.stopPropagation();
+      if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); finishReferenceEdit(event.key === 'Enter'); }
+      if ((event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase())) { event.preventDefault(); finishReferenceEdit(false); if (event.key.toLowerCase() === 'y' || event.shiftKey) store.redo(); else store.undo(); }
+    });
+    listen(doc, 'pointerdown', event => { if (event.target.closest?.('#undoButton, #redoButton, #projectMenuToggle')) finishReferenceEdit(false); }, true);
+    listen($('cameraFillOpacity'), 'input', event => setCameraFillOpacity(Number(event.target.value) / 100));
+    listen($('cameraFillOpacityReset'), 'click', () => setCameraFillOpacity(MapApi.DEFAULT_FILL_OPACITY));
+    [els.mapLegend, $('cameraOpacityControl')].forEach(element => {
+      ['mousedown', 'dblclick', 'touchstart', 'wheel'].forEach(type => listen(element, type, event => event.stopPropagation()));
+    });
     listen(els.mapLegend, 'pointerdown', onLegendPointerDown); listen(els.mapLegend, 'pointermove', onLegendPointerMove); listen(els.mapLegend, 'pointerup', onLegendPointerUp); listen(els.mapLegend, 'pointercancel', onLegendPointerUp); listen(els.mapLegend, 'click', onLegendClick); listen(els.mapLegend, 'keydown', onLegendKeydown);
     listen(els.headingScrubber, 'pointerdown', onHeadingPointerDown); listen(els.headingScrubber, 'pointermove', onHeadingPointerMove); listen(els.headingScrubber, 'pointerup', onHeadingPointerUp); listen(els.headingScrubber, 'pointercancel', onHeadingPointerUp); listen(els.headingScrubber, 'keydown', onHeadingKeydown);
     listen(els.inspector, 'click', onInspectorClick); listen(els.projectSettingsModal, 'click', onProjectSettingsClick); listen(els.projectPresetImportFile, 'change', event => handleProjectImportFile(event.target.files?.[0] || null)); listen($('projectTargetPresetImportFile'), 'change', event => readTargetImport(event.target.files?.[0] || null)); listen(els.projectOpenFile, 'change', event => handleProjectFile(event.target.files?.[0] || null)); listen(els.appShell, 'click', onShellClick); listen(els.appShell, 'click', onFormClick); listen(doc, 'click', onOverflowClick); listen(doc, 'click', onGlobalClick); listen(doc, 'keydown', onKeydown); listen(els.appShell, 'input', onInput); listen(els.appShell, 'change', onChange); listen(els.appShell, 'change', event => { if(event.target.id==='projectTargetPresetSelect'){projectTargetPresetId=event.target.value;renderTargetPresetLibrary();} if(event.target.matches?.('input[name="projectTargetImportMode"],#projectTargetImportDefaults')) planTargetImport(); }); listen(els.appShell, 'blur', onBlur, true); listen(els.appShell, 'keydown', onEnter); listen(view, 'beforeunload', onBeforeUnload);

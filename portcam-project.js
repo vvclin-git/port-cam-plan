@@ -18,7 +18,7 @@
   const TOP_LEVEL_WITH_MAP = TOP_LEVEL_FIELDS.concat('map');
   const SETTINGS_FIELDS = [
     'baseMapKey', 'coverageTargetDimension', 'footprintSteps', 'intersectionPlaneElevationM',
-    'planningTargetHeightM', 'surfaceVisible', 'tilePadding', 'tileZoom', 'coverageAuditDimension', 'coverageAuditMinimumTier', 'coverageAuditRequiredCameras'
+    'planningTargetHeightM', 'pixelCoverageReferenceSizeM', 'surfaceVisible', 'tilePadding', 'tileZoom', 'coverageAuditDimension', 'coverageAuditMinimumTier', 'coverageAuditRequiredCameras'
   ];
   const CAMERA_FIELDS = [
     'color', 'enabled', 'focalLengthMm', 'headingDeg', 'heightM', 'heightReference',
@@ -98,6 +98,9 @@
     settings.coverageAuditRequiredCameras = Object.prototype.hasOwnProperty.call(value, 'coverageAuditRequiredCameras') ? integer(value.coverageAuditRequiredCameras, 'settings.coverageAuditRequiredCameras') : 1;
     if (settings.coverageAuditRequiredCameras < 1) throw new Error('settings.coverageAuditRequiredCameras 必須至少為 1。');
     if (Object.prototype.hasOwnProperty.call(value, 'planningTargetHeightM')) settings.planningTargetHeightM = positive(value.planningTargetHeightM, 'settings.planningTargetHeightM');
+    settings.pixelCoverageReferenceSizeM = Object.prototype.hasOwnProperty.call(value, 'pixelCoverageReferenceSizeM')
+      ? positive(value.pixelCoverageReferenceSizeM, 'settings.pixelCoverageReferenceSizeM')
+      : (settings.planningTargetHeightM ?? 2);
     if (Object.prototype.hasOwnProperty.call(value, 'surfaceVisible')) settings.surfaceVisible = validateBoolean(value.surfaceVisible, 'settings.surfaceVisible');
     if (Object.prototype.hasOwnProperty.call(value, 'tileZoom')) {
       const zoom = integer(value.tileZoom, 'settings.tileZoom');

@@ -422,3 +422,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 @media (max-width: 640px) {
   .panel-control-group .top-button { display: inline-block; padding-left: 7px; padding-right: 7px; font-size: 10px; }
 }
+
+/* Map presentation controls remain local UI; reference size is a Project edit. */
+.reference-size-row { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.reference-size-row input { width: 72px; min-width: 0; padding: 3px; }
+.camera-opacity-control { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.95); font-size: 12px; }
+.camera-opacity-control[hidden] { display: none; }
+.camera-opacity-control input { width: 85px; }
+.camera-opacity-control output { min-width: 30px; }
+.map-top-right-controls { top: 58px; flex-wrap: wrap; justify-content: flex-end; }
+.map-legend { max-height: calc(100% - 110px); overflow-y: auto; }
+.leaflet-control-scale { pointer-events: none; }
+
+.map-status { bottom: 44px; }
+.app-shell { grid-template-columns: minmax(0, 1fr); }
+.top-bar, .shell-body { min-width: 0; }
+@media (max-width: 640px) {
+  .top-bar { overflow-x: auto; }
+  .map-top-right-controls { top: 48px; }
+}

@@ -810,7 +810,7 @@ Camera C   Outside VFOV
 - Current Target 保持。
 - Inspector／地圖投影同步更新。
 
-YOLO Coverage 使用既有 Observation 結果產生四級摘要；地圖上的 Pixel coverage 使用 `planningTargetHeightM` 與既有 ground envelope，兩者不建立第二套 Observation cache。
+YOLO Coverage 使用既有 Observation 結果產生四級摘要；地圖上的 Pixel coverage 使用獨立 `pixelCoverageReferenceSizeM` 與既有 ground envelope（`planningTargetHeightM` 仍決定 planning horizon），兩者不建立第二套 Observation cache。
 
 ---
 
@@ -1871,3 +1871,12 @@ Phase 0 的實際完成狀態、驗證命令與未解除風險以 [`PHASE_0_HAND
 ## 25.6 Phase 4.4 UI projection delta
 
 Phase 4.4 的 live UI projection 以 [`PHASE_4_4_HANDOFF.md`](./PHASE_4_4_HANDOFF.md) 為準：`selectedCameraId`／`selectedTargetId` 分別是 Active Camera／Current Target，`focusedEntity` 只代表 visual/edit focus；`clearFocusedEntity()` 不清除前兩者。Objects／Inspector panel state 與 `focusMapMode` 屬於 UI-only state，不進 Project／Scene schema、Observation cache、revision、history、dirty、Undo／Redo 或 export。Marker drag、FOV emphasis 與 Inspector Details follow `focusedEntity`，而 Observation／Comparison／YOLO 仍使用 Active Camera／Current Target context。
+
+
+## 2026-09-06 地圖控制補充
+
+Reference size 是 Project setting，UI draft 只送到 Map projection，不進 Store settings；`projectEpoch` 是替換／Undo／Redo 的 runtime 失效標記，不匯出、不形成歷史。正式尺寸變更使用一次 settings transaction，Camera／Target revision 與 Observation cache 不變。新版缺欄位時由有效 planning height 或 2 m 初始化，新舊值之後獨立；舊版可能因白名單拒讀新檔。
+
+Camera colors 的 Fill opacity 保存在 `portcam.cameraFillOpacity` localStorage key，預設 0.16，focused ×1.5 並限制至 1，放置 preview ×0.4，disabled 為 0。Map controller 保留最後 presentation snapshot，縮放與放置預覽沿用當前尺寸草稿及透明度。Leaflet 公制比例尺置於右下 attribution 上方，狀態提示讓出空間。這兩項是 UI-only，不擴充 Project／Scene schema。
+
+詳見 [Map controls handoff](MAP_CONTROLS_HANDOFF.md)。FOV 方向把手與精確量距不在本次範圍。

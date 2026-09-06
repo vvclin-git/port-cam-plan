@@ -1,202 +1,92 @@
 # 港區 AI 攝影機規劃工具
 
-Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 Target pixel coverage；目前版本包含 Target model、browser-local Target Defaults/Preset Library、兩階段 Target 定向放置、SVG 船型符號與 Camera × Target Coverage Audit。Project 檔只保存 Target 最終值，不包含本機 Defaults 或 Preset Library。
+Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、焦距、安裝高度、Heading 與俯角估算 FOV、海面可視範圍與 Target pixel coverage，並以 Camera × Target Coverage Audit Matrix 協助檢查每個 Target 是否有足夠的 Camera 覆蓋。
 
-## 開啟
+目前的 Project 使用 `camera-project/1.0`；單一選取 Camera 的分析匯出使用 `camera-scene/1.1`。計算模型維持 `spherical-v1`，Observation 是 runtime-derived result，不是保存的 Camera／Target 配對。
 
-v0.7 的水陸資料是相對路徑的靜態 GeoJSON，必須透過 localhost 開啟：
+## 使用流程
 
-```powershell
-python -m http.server 8765 --bind 127.0.0.1
-```
+1. 在專案根目錄啟動本機 HTTP server，然後開啟 `index.html`。可用 [`start-host.cmd`](./start-host.cmd) 快速啟動，或執行：
 
-然後開啟 <http://127.0.0.1:8765/index.html>。正式入口是 `index.html`；直接雙擊 HTML 仍可使用部分地圖、FOV 與 YOLO 功能，但水陸 GeoJSON 的 `fetch()` 會失敗。
+   ```powershell
+   python -m http.server 8765 --bind 127.0.0.1
+   ```
 
-### 快速啟動
+2. 用 `Add Camera`／`Place Camera` 放置 Camera：第一階段點選位置，第二階段移動游標預覽 Heading，再以第二次有效點擊建立一台 Camera。Navigate 模式可拖曳 focused、visible、unlocked 的 Camera 或 Target marker；拖曳結束只提交一次。
+3. 用兩階段 Target 放置流程先選位置，再指定船首方向。Target 可使用 `small-vessel` 或 `large-vessel` SVG 船型；Zoom 15 以上會以實際 Length × Width 投影地理尺寸。
+4. 從 Object Manager 管理 Cameras／Targets 的選取、搜尋、Visible、Enabled、Locked、Rename、Duplicate、Delete 與 Fit。Camera、Target、Active Camera、Current Target 和視覺上的 `focusedEntity` 是獨立狀態。
+5. 在 Inspector 編輯位置、方向、光學或 Target 尺寸。欄位採 preview／blur／Enter 的單次提交；Heading 可用 N/E/S/W compass scrubber 微調。`Focus map` 可暫時把地圖配置為全寬。
+6. 在 Bottom Workspace 開啟 Coverage Audit Matrix。它依 Width／Length／Height、最低品質 tier 和每個 Target 所需 Camera 數，從 enabled、成功且在 HFOV／VFOV 內的 Observation 產生 `Qualified`、Best Camera、貢獻與冗餘摘要；矩陣結果不寫入 Project。
 
-在專案根目錄雙擊 [`start-host.cmd`](./start-host.cmd)，它會以專案根目錄啟動 `127.0.0.1:8765`，並自動開啟 <http://127.0.0.1:8765/index.html>。Server 會在命令視窗以前景執行，按 `Ctrl+C` 停止。
+## Project、Defaults、Presets 與匯出
 
-若 Windows 找不到 Python，請先安裝 Python 並確認 `python` 已加入 PATH，或手動執行：
+Project Settings 包含 Camera／Target Defaults、Preset Library 與 Coverage Requirements。Camera 與 Target 都支援建立、載入、套用、更新、重新命名、複製、刪除及 Merge／Replace Import／Export Presets；Inspector 的 Apply／Reset 以一次 transaction 套用目前選定的 Preset，Reset 代表恢復目前的 browser-local Defaults。Preset 與 Defaults 的儲存失敗不應破壞既有有效資料。
 
-```powershell
-python -m http.server 8765 --bind 127.0.0.1
-```
+Top Bar 的 Project menu 支援 New Project、Open Project、Save Project As 與 Rename。New／Open 遇到 dirty Project 時會提供 Save、Discard、Cancel；Open 會先完整驗證檔案，再以原子方式替換目前 Project。
 
-## 功能
+資料邊界如下：
 
-- Sensor optical format 預設：1/4"、1/3"、1/2.8"、1/2.5"、1/2"、1/1.8"、1/1.7"、2/3"、1"，另有 Custom。
-- 常見解析度預設：VGA、720p、1080p、3MP、1440p、5MP、4K、DCI 4K，另有 Custom。
-- 地圖底圖：OpenStreetMap、NLSC 通用電子地圖與 NLSC 正射影像。
-- 預設開啟水域／陸地 overlay；可獨立關閉視覺圖層，點擊分類仍會運作。
-- 一般地圖點擊放置測試目標，顯示距離、方位、HFOV、bbox、COCO size、P3/P4/P5、YOLO heuristic 與 `water`／`land`／`Unknown` 地表類型。
-- Camera 與 Target 是獨立 Project entity；Active Camera、Current Target 與 visual `focusedEntity` 分離管理。
-- `Place Camera`／`Add Camera` 共用兩階段流程：先點位置，再移動游標指定 Heading；第二次有效點擊才建立一台 `placed` Camera。
-- Navigate 模式可拖曳 focused、visible、unlocked Camera／Target marker；`place-camera` 不再搬動既有 Camera。
-- Map-level `FOV display` 支援 `Camera colors` 與 `Pixel coverage` 互斥模式；Coverage 會對所有符合資格的 Camera 顯示四級 bands。
-- Pixel coverage Legend 僅在 Coverage 模式顯示，支援 Pointer Events 拖曳、觸控、鍵盤位移、Escape 還原、Reset 與 workspace 邊界限制。
-- Top Bar 提供獨立 `Objects`、`Inspector`、`Focus map` 控制；Inspector 的 Heading 另有 N/E/S/W compass scrubber。
-- FOV coverage 依短邊像素分成 ≥32、16–32、8–16、<8 px 四段。
-- Bottom Workspace 的 Coverage Audit 以 Width／Length／Height 任一尺寸估算 pixel coverage，顯示每個 Target 的合格來源、最佳 Camera 與單點風險；這是 site-planning heuristic，不是實際模型偵測率。
+| 類別 | 內容 |
+| --- | --- |
+| Project 持久資料 | Project name、Camera／Target、Camera／Target 設定、Map settings、Coverage Audit requirements，以及可選的 map viewport。Schema 是 `camera-project/1.0`。 |
+| Browser-local | Camera／Target Defaults、命名 Preset Library 與本機偏好；不嵌入 Project 或 Scene。 |
+| UI-only／runtime | panel、tab、search、Focus map、placement preview、legend 位置、preview draft、Observation cache、Comparison／Audit runtime 結果、Undo／Redo history 與 dirty state。 |
 
-## v0.7 水陸圖資
+Camera Scene 匯出是單一 Camera 的分析交接檔，包含當下 Camera、光學、FOV、底圖來源與保守 tile manifest；它不是完整 Project，也不保存 Camera／Target 集合。Project 檔用於恢復規劃工作；Scene 檔用於外部分析或下游流程。
 
-資料檔為 [`data/kaohsiung-harbor-surface.geojson`](./data/kaohsiung-harbor-surface.geojson)，是 WGS84 / EPSG:4326 的 `FeatureCollection`，只含 `Polygon`／`MultiPolygon`，每個 feature 都有 `properties.surface`：`water` 或 `land`。
+## 計算、Surface 與授權限制
 
-- 固定 bbox：`120.24–120.36 E / 22.55–22.68 N`；範圍外分類為 `Unknown`。
-- 主要海域依 OSM coastline water polygon 的 land-left／water-right 處理規則組裝 `natural=coastline`，並以工作區 bbox 裁切。
-- 補入同一 OSM 快照內的封閉 `natural=water` 與 `waterway=dock` polygon；重疊水域在輸出前排除重複 rings。
-- 修復 ring 閉合與重複頂點，再以約 1–2 m 的 WGS84 近似容差簡化；land 是工作區矩形減去 water，並保留 polygon holes。
-- 來源：<https://osmdata.openstreetmap.de/data/water-polygons.html>、工作區快照查詢服務 <https://overpass-api.de/>；快照日期：`2026-08-13`。
-- 授權與署名：`© OpenStreetMap contributors / ODbL 1.0`。這是規劃參考資料，不是測量級岸線。
+- `HFOV = 2 × atan(sensor width / (2 × focal length))`；VFOV、pixel pitch、地平線與海平面 near／far footprint 依同一 `spherical-v1` 工程模型計算。
+- Pixel coverage 的 32／16／8 px 色帶是 site-planning heuristic，不是 YOLO 偵測率保證；實際效果仍受壓縮、光線、海況、遮擋、姿態與模型訓練資料影響。
+- Surface 使用固定的 [`data/kaohsiung-harbor-surface.geojson`](./data/kaohsiung-harbor-surface.geojson)，支援 water／land／unknown、Polygon／MultiPolygon 與 holes。資料範圍為 `120.24–120.36 E / 22.55–22.68 N`，來源與處理限制見 [`docs/SURFACE_LAYER_IMPLEMENTATION.md`](./docs/SURFACE_LAYER_IMPLEMENTATION.md)。資料是規劃參考，不是測量級岸線；OpenStreetMap 資料採 `© OpenStreetMap contributors / ODbL 1.0`。
+- 目前保留近距離／遠距離、地平線與 30 km 最大射線距離限制；不包含 DEM、潮位、建築物、障礙物或精確 ray-casting 視角真值。
+- 舊 Python ray-casting 工具與其快取、CLI、Pillow 依賴已移除。Python HTTP server 在本專案只負責以 localhost 提供相對路徑的靜態檔案，不是 Python 計算服務。
 
-## 計算模型
+## 網路與部署
 
-- `pixel pitch = sensor active width / image width`
-- `HFOV = 2 × atan(sensor width / (2 × focal length))`
-- `VFOV = 2 × atan(sensor height / (2 × focal length))`
-- 地平線距離採用 `3.57 × (√camera height + √target height)` km 的工程近似。
-- 俯角與 VFOV 會決定海平面的 near/far footprint；coverage 另與地平線及目標尺寸像素距離交集。
-- 地表分類支援 Polygon、MultiPolygon 與 holes，分類順序固定為 water、land、unknown；共用邊界 water 優先。
+本專案是純靜態網站，沒有應用程式建置步驟，也不需要 npm 或 backend。部署時保留 `index.html`、`leaflet/`、`data/` 和其他相對資源的目錄結構；`./leaflet/...`、`./data/...` 等相對路徑也支援 GitHub Pages repository site 或其他子目錄 hosting。
 
-YOLO 顏色分級是 site-planning heuristic，不是 YOLO 官方保證門檻。實際效果仍會受壓縮、光線、海況、遮擋、目標姿態與模型訓練資料影響。
+OSM／NLSC 圖磚仍需外部網路；圖磚不隨專案快取或內嵌。Leaflet 1.9.4 的本機檔案與 BSD-2-Clause 授權在 [`leaflet/`](./leaflet/)。
 
-## 網路與錯誤狀態
+若使用 GitHub Pages，請依 [GitHub 官方文件](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) 在 repository Settings 的 Pages 設定發布來源，選擇要發布的 branch 與 root（`/`）目錄。此說明不代表本 repository 目前已啟用 Pages，也不指定候選網址；本專案沒有新增部署 workflow。
 
-Leaflet library 已改由專案內的 `leaflet/` 靜態目錄載入，不再連線任何 Leaflet CDN。水陸資料也不在線上查詢，只由 `fetch('./data/kaohsiung-harbor-surface.geojson')` 載入專案內固定檔；只有 OSM／NLSC 圖磚仍需外部網路。
+## 開發中（Unreleased）
 
-- 載入中：checkbox 停用，結果顯示「載入中」。
-- 載入成功：checkbox 預設開啟，可切換視覺 overlay。
-- 404、`file://` 或其他載入失敗：顯示「無法判定」與 localhost 啟動命令；既有地圖、FOV 與 YOLO 不被阻止。
-- 點擊資料 bbox 外：顯示 `Unknown`。
+以下內容已存在於目前工作目錄，但仍需後續人工驗收，不能視為已完成產品交付；背景與自動化證據見 [`docs/MAP_CONTROLS_HANDOFF.md`](./docs/MAP_CONTROLS_HANDOFF.md)。需求背景為 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
 
-Sensor active area 是 optical-format 工程近似值；正式設計應以攝影機 datasheet 的實際 active width/height 為準。
+- Map-only Pixel coverage `Reference size` 已與 planning height 分離，支援 preview、Enter／blur 單次提交、Escape／invalid rollback、Undo／Redo 與 Project replacement cancellation；相容性仍是 `camera-project/1.0`，新版可讀舊檔，但舊版嚴格欄位白名單可能拒絕新欄位。
+- Camera colors 的 browser-local `Fill opacity` 目前以 16% 作為暫定預設，另有 focused 與 placement-preview 倍率、Reload／Reset 和 storage fallback；三種底圖上的透明度視覺與對比仍不能宣稱已完成正式驗收。
+- Leaflet 公制比例尺、legend／status／Inspector 的邊界配置與窄版 map overflow 修正已加入；FOV bearing handle、精確線／路徑量距、per-Camera settings 與 Map Settings redesign 仍在後續範圍。
 
-## Leaflet 靜態資源與部署
+## 歷史階段摘要
 
-- 版本固定為 Leaflet 1.9.4，來源為 [Leaflet 官方 v1.9.4 release](https://github.com/Leaflet/Leaflet/releases/tag/v1.9.4)。
-- `leaflet/leaflet.js`、`leaflet/leaflet.css`、`leaflet/images/` 與 `leaflet/LICENSE` 均隨專案提交；CSS 使用官方相對路徑 `images/...`，不可移動或省略 images 目錄。
-- `index.html` 使用 `./leaflet/leaflet.css` 與 `./leaflet/leaflet.js`，不使用 `/` 開頭的根目錄路徑，因此可部署在 GitHub Pages repository site、Vercel static hosting、IIS virtual directory、NAS 子目錄或其他網站子目錄。
-- 支援 localhost HTTP server：`python -m http.server 8765 --bind 127.0.0.1`。
-- `start-host.cmd` 會從腳本所在目錄啟動 server，不依賴固定的本機絕對路徑，也不需要 npm 或 backend。
-- 也可直接部署整個專案目錄到 GitHub Pages、Vercel static hosting、IIS 或 NAS static hosting；需保留 `leaflet/`、`data/` 與 HTML 的相對目錄結構。
-- OSM／NLSC 圖磚 URL 維持線上服務，離線部署不包含圖磚快取或圖磚伺服器。
-- Leaflet 採 BSD-2-Clause；授權全文見 [`leaflet/LICENSE`](./leaflet/LICENSE)。
-- 若 Leaflet 本機資源遺失，頁面會提示檢查 `leaflet/leaflet.js`、`leaflet/leaflet.css`、`leaflet/images/`、檔名大小寫與相對路徑。
+詳細的契約、實作範圍、測試結果與人工驗收界線保留在各 handoff；以下只摘要已提交或已記錄的階段：
 
-## Camera Scene JSON 匯出
+- [Phase 0](./docs/PHASE_0_HANDOFF.md)：計算核心、`spherical-v1`、Project／Scene schema 與 ray distance contract。
+- [Phase 1](./docs/PHASE_1_HANDOFF.md)、[Phase 2](./docs/PHASE_2_HANDOFF.md)：Project Store、multi-Camera Leaflet projection 與 reactive interaction。
+- [Phase 3](./docs/PHASE_3_HANDOFF.md)、[Phase 3.1](./docs/PHASE_3_1_HANDOFF.md)：App Shell、Object Manager、Inspector、Target list、drag／wheel contract。
+- [Phase 4.1](./docs/PHASE_4_1_HANDOFF.md)、[Phase 4.2](./docs/PHASE_4_2_HANDOFF.md)、[Phase 4.3](./docs/PHASE_4_3_HANDOFF.md)、[Phase 4.4](./docs/PHASE_4_4_HANDOFF.md)：Comparison／YOLO analysis、FOV modes、two-stage Camera placement、Focus map 與 Heading scrubber。
+- [Phase 5.1](./docs/PHASE_5_1_HANDOFF.md)、[Phase 5.2](./docs/PHASE_5_2_HANDOFF.md)、[Phase 5.3](./docs/PHASE_5_3_HANDOFF.md)、[Phase 5.4](./docs/PHASE_5_4_HANDOFF.md)：Camera Defaults、Camera Preset Library、Preset Transfer、Project New／Open／Save As／Rename。
+- [Phase 5.5](./docs/PHASE_5_5_HANDOFF.md)、[Phase 5.6](./docs/PHASE_5_6_HANDOFF.md)：Target model／Defaults／Presets／two-stage placement，以及 Camera × Target Coverage Audit Matrix。
 
-側欄的 Camera Scene 匯出會依按鈕當下的 Camera marker、Camera 控制參數、光學參數、目前底圖與 tile zoom，產生版本化的 `camera-scene/1.1` JSON。可下載 `camera-scene-YYYYMMDD-HHmmss.json`，或複製完整 JSON 供外部分析使用；App 只輸出 manifest，不下載或內嵌 PNG／JPEG 圖磚。
-
-- `camera.position` 記錄 `[latitudeDeg, longitudeDeg]` 語意的 WGS84 位置、相對交平面高度與 `heightReference: "intersection-plane"`。
-- `camera.orientation.headingDeg` 以真北為 0°、順時針增加並正規化到 `[0, 360)`；`tiltDownDeg` 正值向下；第一版 `rollDeg` 固定為 0°。
-- `image` 使用左上角原點、影像中心 principal point 與 `pixelCenterConvention: "half-pixel"`；外部程式應以 pixel + 0.5 作為 pixel center。
-- `optics` 包含 sensor 尺寸、解析度、焦距、pixel pitch、完整 HFOV／VFOV 與 `distortionModel: "none"`。
-- `coordinateSystem` 固定記錄 EPSG:4326／WGS84、heading／tilt 慣例與 Camera frame：right `+X`、down `+Y`、forward `+Z`。
-- `intersectionSurface` 是 elevation 0 m 的水平交平面；Camera 高度不是實際海拔，也不包含 DEM、潮位、建築或障礙物。
-
-### Tile manifest
-
-`tileSelection` 使用現有 near／far、HFOV／VFOV 與 horizon 模型建立保守 FOV envelope，最大距離為 `min(horizon distance, 30000 m)`，再轉換成標準 Web Mercator tile indices 並加入一圈 `paddingTiles: 1`。Tile 依 y、x 排序且去除重複，manifest 不是逐像素 ray-casting 的幾何真值。
-
-- `footprintStatus` 為 `finite`、`horizon-clipped` 或 `no-ground-intersection`；最後一種會輸出 `footprint: null` 與空的 `tiles`。
-- JSON 的 tile 欄位永遠是標準 Web Mercator `z/x/y`；每個 tile 另含 WGS84 `bounds` 與依目前來源 template 展開的完整 `url`。
-- OSM 使用 `{z}/{x}/{y}`；NLSC EMAP／PHOTO 維持 App 實際使用的 `{z}/{y}/{x}` WMTS GoogleMapsCompatible URL。切換底圖只改變 `tileSource` 與 manifest URL，不改 Camera 模型。
-- Tile 服務斷線時仍可產生 JSON，因為匯出不依賴圖磚成功載入。外部程式下載時應保留來源 attribution、使用可控 cache、對暫時性錯誤採有限次數與退避 retry，並遵守服務的 rate limit；不可把 Cookie、Token、Authorization header、Proxy credential 或瀏覽器憑證放入 JSON。
-- 若 ray 落在 manifest 外，外部程式應回傳 `tile-not-in-manifest`，不可誤判成 `no-intersection`、`land` 或 `water`。
-
-## Phase 0 計算契約與測試
-
-[`portcam-core.js`](./portcam-core.js) 是不依賴 DOM／Leaflet 的純計算核心，頁面 adapter 與 Node golden tests 共用它。正式計算模型為 `spherical-v1`；`tiltDownDeg` 正值向下，Camera height 使用 `heightReference: "intersection-plane"`，Scene 另記錄 `intersectionPlaneElevationM` 與 `verticalDatum: "local-planning-datum"`。
-
-- Project schema 是 `camera-project/1.0`；Observation 預設是 derived runtime cache，不是必要持久資料。
-- Camera Scene export 維持 `camera-scene/1.1` 與 top-level `camera`，不改為 `cameras[]`。
-- Tile selection 的有效距離是 `min(horizonDistanceM, 30000)`，並保留 `hardMaximumRayDistanceM: 30000`。
-
-Phase 0 回歸命令：
-
-```powershell
-node --test test_portcam_core.js
-node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const a=h.indexOf('<script>',h.indexOf('leaflet.js'));const b=h.indexOf('</script>',a);new Function(h.slice(a+8,b));console.log('inline script syntax ok')"
-```
-
-完整交接與實際驗證結果見 [`docs/PHASE_0_HANDOFF.md`](./docs/PHASE_0_HANDOFF.md)。
-
-## Phase 1 Project Store
-
-[`portcam-store.js`](./portcam-store.js) 將 Camera／Target canonical Project data 正規化，並以 UMD 形式同時提供瀏覽器 `window.PortCamStore` 與 Node 使用。Store 不依賴 DOM、Leaflet；UI、history、preview 與 Observation runtime cache 均不會寫入 `camera-project/1.0` JSON。Camera／Target selection 獨立，預覽不變更 revision/history/dirty，正式 commit 才建立單一 transaction；`undo()`、`redo()`、`markSaved()` 已可供後續 UI 使用。
-
-## Phase 2 Reactive Leaflet 多 Camera
-
-[`portcam-map.js`](./portcam-map.js) 將 Store state 投影成每台 Camera/Target 各自的 Leaflet LayerGroup；Object Manager 可選取、新增、複製、刪除與切換 visible/enabled/locked。既有 Camera 的位置移動在 Navigate 模式透過 marker drag 完成，`place-camera` 僅建立新 Camera。所有畫面更新由單一 Store subscription 驅動，因此 Undo/Redo、selection、visibility、lock、enabled 與 commit 都會更新 marker、FOV、表單與 connection line，而不是依賴舊的 `updateAll()`。
-
-`camera-project/1.0` 與 selected-Camera `camera-scene/1.1` 保持不變。完整範圍、測試證據與尚需 real-browser 驗收的互動項目見 [`docs/PHASE_2_HANDOFF.md`](./docs/PHASE_2_HANDOFF.md)。
-
-Phase 1 回歸：
-
-```powershell
-node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js
-```
-
-## Phase 3 App Shell 與核心工作區
-
-正式入口 [`index.html`](./index.html) 現在使用 [`app.css`](./app.css) 與 [`portcam-ui.js`](./portcam-ui.js) 投影桌面 App Shell：Top Bar、Object Manager、Inspector、Map Workspace，以及預設收合的 Bottom Workspace。
-
-- `PortCamUI.createAppController({store, mapController, root})` 負責 Store-driven DOM projection、panel state、responsive invalidation 與 cleanup；實際頁面以 `map`／Leaflet 建立既有 `PortCamMap` controller。
-- Object Manager 是 Visible／Enabled／Locked 的唯一控制入口；其 Cameras／Targets tabs 均支援搜尋、選取、重新命名、Fit、複製與刪除。
-- Inspector 的 Details 顯示 focused entity；Observation 即時計算 Current Target 由 Active Camera 觀測的結果，不建立或保存物件關係。`setActiveResultTab` 僅為相容性保留的 deprecated UI-only API。
-- Camera 與 Target 欄位都採 preview／blur／Enter single-commit；Target Details 在 preview 時保留 active input、捲動與 section 收合狀態。
-- Map Settings 保留 OSM、NLSC EMAP、NLSC PHOTO、Surface `water`／`land`／`unknown`、tile zoom 與獨立 labels 設定。Project Import／Save 與精確四角 ray 仍不在本階段；Comparison 與 YOLO Coverage 已由 Phase 4 實作。
-
-## Phase 3.1 共用 Entity、地圖互動與 Target List
-
-[`docs/PHASE_3_1_HANDOFF.md`](./docs/PHASE_3_1_HANDOFF.md) 記錄本階段的共用 drag contract、wheel policy、pane 順序與人工驗收界線。
-
-- Camera／Target 共用 `PortCamMap.createEntityMarkerInteraction`，只有 focused、visible、unlocked 且 `navigate` 才能拖曳；Active Camera／Current Target selection 與 visual focus 分離。preview 不改 revision/history/dirty，drag end 只 commit 一次。
-- Target 使用 `L.marker`／`L.divIcon` crosshair；FOV、YOLO、centerline、connection line 不攔截 pointer，Current Target 保留 connection line，visual marker emphasis 則由 `focusedEntity` 控制。
-- Wheel 由 MapController 單一 non-passive handler 處理，正規化 pixel／line／page delta，同方向 180 ms burst 最多縮放一級，Ctrl+wheel 保留瀏覽器縮放。
-- Object Manager 的 Cameras／Targets 分頁支援 Search、Select、Rename、Visible、Enabled、Locked、Duplicate、Delete、Fit Target；搜尋、分頁、捲動與 focus 是 UI-only state，不進 Project、history 或 dirty。
-- Camera／Target labels 預設開啟，Map Settings 可分別切換；rename 更新既有 tooltip，不重建或累積 labels。
-
-## Phase 3.2 Unified Object Management UI
-
-左側 Object Manager 收斂 Cameras／Targets 表格；右側 Inspector 以 Details／Observation 顯示 focused entity 與 Current Target／Active Camera 的即時計算結果。Phase 4.4 增加可獨立收合的 Objects／Inspector、UI-only Focus map 與 heading compass scrubber；Bottom Workspace 的 Comparison 與 YOLO Coverage 已使用純 derived analysis，不寫入 Project／Scene。細節見 [`docs/PHASE_4_4_HANDOFF.md`](./docs/PHASE_4_4_HANDOFF.md)。
-
-2026-08-17 UI polish 移除 Top Bar Observation、Camera Open Result 與舊 Result Drawer DOM；Target 建立後自動切到 Observation。Target marker drag preview 不會重建作用中的 `L.divIcon`，只在 selected／locked／enabled 樣式改變時更新 icon。
-
-完整實際範圍、API、Node／browser evidence 與未完成人工 gate 見 [`docs/PHASE_3_HANDOFF.md`](./docs/PHASE_3_HANDOFF.md)。
-
-## Phase 4 多 Camera analysis 與地圖控制
-
-目前 HEAD 為 `29b753e`，Phase 4.1–4.4 已在 `codex/multi-cam` 分支提交。這些功能維持既有 `camera-project/1.0`、selected-Camera `camera-scene/1.1`、`spherical-v1`、Observation cache、coverage 計算與公開 Store／Map API：
-
-- Camera Comparison 以 enabled Camera 的 Current Target Observation 排序，支援 Visible／Outside FOV／Unavailable／Failed 狀態與鍵盤啟用 Active Camera。
-- YOLO Coverage 以同一 Observation 結果產生四級摘要；地圖 Pixel coverage 則使用 Project `planningTargetHeightM` 與既有距離裁切，兩者不共用第二套 Observation cache。
-- Camera colors 與 Pixel coverage 是互斥的 map display mode；Camera identity 顏色只在前者出現，Coverage bands 與 neutral FOV geometry 只在後者出現。
-- Add／Place Camera 的 pending anchor、placement step、heading preview、FOV mode、legend 座標、panel state 與 Focus map 都是 UI-only，不進 schema、revision、history、dirty、Undo／Redo 或 export。
-- Focus map 在所有支援的 panel／DPR 組合中將地圖配置為單欄全寬；離開後還原 Objects／Inspector 的原本開關狀態。
-
-詳細契約與驗收紀錄：[`PHASE_4_1_HANDOFF.md`](./docs/PHASE_4_1_HANDOFF.md)、[`PHASE_4_2_HANDOFF.md`](./docs/PHASE_4_2_HANDOFF.md)、[`PHASE_4_3_HANDOFF.md`](./docs/PHASE_4_3_HANDOFF.md)、[`PHASE_4_4_HANDOFF.md`](./docs/PHASE_4_4_HANDOFF.md)。
+Comparison／YOLO 舊 Workspace 表格、crosshair Target 與單次點擊放置是歷史實作脈絡；目前使用 Coverage Audit Matrix、SVG vessel symbol 與兩階段 Target placement。舊 Python 分析工具與舊分析表格的歷史紀錄保留在 [`CHANGELOG.md`](./CHANGELOG.md)，不代表目前仍提供那些工具或 UI。
 
 ## 驗證
 
-可先執行靜態檢查：
+根目錄完整 Node 測試集合：
+
+```powershell
+node --test test_*.js
+```
+
+也可執行靜態檢查：
 
 ```powershell
 python -m json.tool data/kaohsiung-harbor-surface.geojson > $null
-node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const a=h.indexOf('<script>',h.indexOf('leaflet.js'));const b=h.indexOf('</script>',a);new Function(h.slice(a+8,b));console.log('inline script syntax ok')"
-```
-
-瀏覽器驗證應確認 localhost 載入、預設 overlay、checkbox 開關、三種底圖、一般點擊分類、Camera 放置模式，以及 GeoJSON 404 時既有功能仍可使用。NLSC 正射影像至少抽查 10 點、岸線 5–15 m 的潮位／資料日期差異列為容許帶；ray casting 與相機視角預覽不在 v0.7 範圍。
-
-Phase 4 回歸命令：
-
-```powershell
-node --test test_portcam_core.js test_portcam_store.js test_portcam_map.js test_camera_comparison.js test_yolo_coverage.js
+node --check portcam-core.js
 node --check portcam-store.js
 node --check portcam-map.js
 node --check portcam-ui.js
 ```
 
-目前完整 Node suite 為 38/38；Phase 4 browser smoke 已涵蓋 1366×768、1920×1080 與 DPR 2，並驗證 panel allocation、Focus map、FOV mode、legend、heading scrubber、body overflow 與 console error/warning。
-
-詳細規格、schema、分類狀態與後續接點見 [`docs/SURFACE_LAYER_IMPLEMENTATION.md`](./docs/SURFACE_LAYER_IMPLEMENTATION.md)。
+測試與自動化 browser smoke 不取代實體 touch／stylus、screen reader、native picker、實際下載權限、不同瀏覽器與部署環境的人工驗收；本次文件同步也不宣稱補完這些 gate。
