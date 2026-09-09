@@ -2,9 +2,10 @@
 
 ## Unreleased — 開發中
 
-- 工作目錄已加入 Map-only Pixel coverage `pixelCoverageReferenceSizeM`：與 planning height 分離，支援 preview、Enter／blur 單次提交、Escape／invalid rollback、Undo／Redo 與 Project replacement cancellation。相容性仍是 `camera-project/1.0`；新版可讀舊檔，但舊版嚴格欄位白名單可能拒絕新欄位，`camera-scene/1.1` 不變。
-- 工作目錄已加入 browser-local Camera colors `Fill opacity`（目前 16% 暫定預設）、focused／placement preview 倍率、Reload／Reset 與 storage fallback。三種底圖的透明度視覺與對比仍未完成正式人工驗收。
-- 工作目錄已加入 Leaflet 公制比例尺、legend／status／Inspector 邊界配置與窄版 map overflow 修正。上述三項均為開發中，驗收未完成；背景與證據見 [`docs/MAP_CONTROLS_HANDOFF.md`](docs/MAP_CONTROLS_HANDOFF.md)，需求背景見 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
+- Unreleased 已加入 Map-only Pixel coverage `pixelCoverageReferenceSizeM`：與 planning height 分離，支援 preview、Enter／blur 單次提交、Escape／invalid rollback、Undo／Redo 與 Project replacement cancellation。相容性仍是 `camera-project/1.0`；新版可讀舊檔，但舊版嚴格欄位白名單可能拒絕新欄位，`camera-scene/1.1` 不變。
+- Unreleased 已加入 browser-local Camera colors `Fill opacity`（16% 預設）、focused／placement preview 倍率、Reload／Reset 與 storage fallback。最新 handoff 已比較 OSM、NLSC EMAP 與 NLSC PHOTO 的 16%／24% 顯示；結果支持目前預設，但不保證所有環境的普遍對比度。
+- Unreleased 已加入 Leaflet 公制比例尺、legend／status／Inspector 邊界配置與窄版 map overflow 修正。背景與驗證證據見 [`docs/MAP_CONTROLS_HANDOFF.md`](docs/MAP_CONTROLS_HANDOFF.md)，需求背景見 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
+- 最新 handoff 記錄 `node --test test_*.js` 82/82，並完成 Chromium 互動與多尺寸版面檢查；touch／stylus、screen reader、原生 OS picker 與實體裝置 Save 等人工 gate 仍未重新認證，因此本節仍不代表產品版本已發布。
 
 ## Repository cleanup — 2026-08-30
 

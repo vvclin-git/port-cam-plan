@@ -52,10 +52,10 @@ OSM／NLSC 圖磚仍需外部網路；圖磚不隨專案快取或內嵌。Leafle
 
 ## 開發中（Unreleased）
 
-以下內容已存在於目前工作目錄，但仍需後續人工驗收，不能視為已完成產品交付；背景與自動化證據見 [`docs/MAP_CONTROLS_HANDOFF.md`](./docs/MAP_CONTROLS_HANDOFF.md)。需求背景為 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
+以下內容已實作並保留在 Unreleased；最新的 [`docs/MAP_CONTROLS_HANDOFF.md`](./docs/MAP_CONTROLS_HANDOFF.md) 記錄了 82/82 Node 測試、Chromium 互動與三種底圖的視覺檢查。這些證據仍不等同於產品發布：touch／stylus、screen reader、原生 OS picker 與實體裝置 Save 等人工 gate 尚未重新認證。需求背景為 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
 
 - Map-only Pixel coverage `Reference size` 已與 planning height 分離，支援 preview、Enter／blur 單次提交、Escape／invalid rollback、Undo／Redo 與 Project replacement cancellation；相容性仍是 `camera-project/1.0`，新版可讀舊檔，但舊版嚴格欄位白名單可能拒絕新欄位。
-- Camera colors 的 browser-local `Fill opacity` 目前以 16% 作為暫定預設，另有 focused 與 placement-preview 倍率、Reload／Reset 和 storage fallback；三種底圖上的透明度視覺與對比仍不能宣稱已完成正式驗收。
+- Camera colors 的 browser-local `Fill opacity` 預設為 16%，另有 focused 與 placement-preview 倍率、Reload／Reset 和 storage fallback；handoff 已比較 OSM、NLSC EMAP 與 NLSC PHOTO 的 16%／24% 顯示，支持目前預設，但不保證所有環境的普遍對比度。
 - Leaflet 公制比例尺、legend／status／Inspector 的邊界配置與窄版 map overflow 修正已加入；FOV bearing handle、精確線／路徑量距、per-Camera settings 與 Map Settings redesign 仍在後續範圍。
 
 ## 歷史階段摘要
@@ -90,3 +90,5 @@ node --check portcam-ui.js
 ```
 
 測試與自動化 browser smoke 不取代實體 touch／stylus、screen reader、native picker、實際下載權限、不同瀏覽器與部署環境的人工驗收；本次文件同步也不宣稱補完這些 gate。
+
+最新 MAP controls handoff 記錄的回歸結果為 `node --test test_*.js` 82/82，並包含實際 Chromium 互動與 1600／1280／900／480 px 版面檢查；這些結果屬 handoff evidence，不取代上述人工 gate。
