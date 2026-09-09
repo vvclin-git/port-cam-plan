@@ -810,7 +810,9 @@ Camera C   Outside VFOV
 - Current Target 保持。
 - Inspector／地圖投影同步更新。
 
-YOLO Coverage 使用既有 Observation 結果產生四級摘要；地圖上的 Pixel coverage 使用獨立 `pixelCoverageReferenceSizeM` 與既有 ground envelope（`planningTargetHeightM` 仍決定 planning horizon），兩者不建立第二套 Observation cache。
+YOLO Coverage 使用既有 Observation 結果產生四級摘要；地圖上的 Pixel coverage 使用獨立 `pixelCoverageReferenceSizeM` 與既有 ground envelope（`planningTargetHeightM` 仍決定 planning horizon），兩者不建立第二套 Observation cache。Legend 可在 session-local 的 `pixel-heuristic-v1`（8／16／32 px）與 `johnson-dri-2px-v1`（2 px／cycle 的 approximate Detection／Recognition／Identification）之間切換；criteria profile 不進 Project、Scene、revision、history 或 dirty state，Coverage Audit 仍使用其設定的 heuristic requirements。
+
+Navigate 模式的 focused Camera 會在其 FOV centerline 附近顯示 Camera-only heading handle。Handle 只改 `headingDeg`，拖曳期間透過 Store preview 更新 FOV／Inspector，release 時最多產生一筆 transaction；Escape、pointer cancel、map projection 變更、focus／mode／lock／visibility 變更與 destroy 都會清理且不提交。Camera／Target marker 仍保有優先命中，FOV polygon、coverage band、centerline 與空白地圖保持非互動；Target handle UI 不在本次範圍。
 
 ---
 
@@ -1873,10 +1875,10 @@ Phase 0 的實際完成狀態、驗證命令與未解除風險以 [`PHASE_0_HAND
 Phase 4.4 的 live UI projection 以 [`PHASE_4_4_HANDOFF.md`](./PHASE_4_4_HANDOFF.md) 為準：`selectedCameraId`／`selectedTargetId` 分別是 Active Camera／Current Target，`focusedEntity` 只代表 visual/edit focus；`clearFocusedEntity()` 不清除前兩者。Objects／Inspector panel state 與 `focusMapMode` 屬於 UI-only state，不進 Project／Scene schema、Observation cache、revision、history、dirty、Undo／Redo 或 export。Marker drag、FOV emphasis 與 Inspector Details follow `focusedEntity`，而 Observation／Comparison／YOLO 仍使用 Active Camera／Current Target context。
 
 
-## 2026-09-06 地圖控制補充
+## 2026-09-10 地圖控制補充
 
 Reference size 是 Project setting，UI draft 只送到 Map projection，不進 Store settings；`projectEpoch` 是替換／Undo／Redo 的 runtime 失效標記，不匯出、不形成歷史。正式尺寸變更使用一次 settings transaction，Camera／Target revision 與 Observation cache 不變。新版缺欄位時由有效 planning height 或 2 m 初始化，新舊值之後獨立；舊版可能因白名單拒讀新檔。
 
 Camera colors 的 Fill opacity 保存在 `portcam.cameraFillOpacity` localStorage key，預設 0.16，focused ×1.5 並限制至 1，放置 preview ×0.4，disabled 為 0。Map controller 保留最後 presentation snapshot，縮放與放置預覽沿用當前尺寸草稿及透明度。Leaflet 公制比例尺置於右下 attribution 上方，狀態提示讓出空間。這兩項是 UI-only，不擴充 Project／Scene schema。
 
-詳見 [Map controls handoff](MAP_CONTROLS_HANDOFF.md)。FOV 方向把手與精確量距不在本次範圍。
+共享 heading gesture lifecycle 位於 `portcam-heading-interaction.js`，criteria profile 與 strict evaluator 位於 `portcam-criteria.js`；兩者都不依賴 DOM／Store（map adapter 才接入 Store）。這保留未來 Target adapter 與 Coverage Audit 重用的邊界，而不把 UI presentation state 混入既有 schema。詳見 [Map controls handoff](MAP_CONTROLS_HANDOFF.md)。精確線／路徑量距仍不在本次範圍。

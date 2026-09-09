@@ -2,10 +2,12 @@
 
 ## Unreleased — 開發中
 
+- Unreleased 已加入 Navigate 模式的 Camera-only FOV heading handle：handle 固定在 Camera 中心線附近，拖曳以 Store preview／一次 commit 更新 Heading，支援 pointer capture、Escape／pointer cancel／地圖投影變更取消、Undo／Redo 與既有 Heading keyboard semantics；Camera marker、Target marker、FOV geometry 與 map pan 邊界保持分離。
+- Unreleased 已加入 session-local Pixel coverage criteria switch：`pixel-heuristic-v1` 保留 8／16／32 px heuristic，`johnson-dri-2px-v1` 提供 2 px／cycle 的 Detection／Recognition／Identification 近似 bands。共用的 `portcam-criteria.js` 純函式可供未來 Audit 使用，但目前 Coverage Audit 仍維持既有設定與 heuristic 語意；criteria 切換不進 Project、dirty、revision 或 history。
 - Unreleased 已加入 Map-only Pixel coverage `pixelCoverageReferenceSizeM`：與 planning height 分離，支援 preview、Enter／blur 單次提交、Escape／invalid rollback、Undo／Redo 與 Project replacement cancellation。相容性仍是 `camera-project/1.0`；新版可讀舊檔，但舊版嚴格欄位白名單可能拒絕新欄位，`camera-scene/1.1` 不變。
 - Unreleased 已加入 browser-local Camera colors `Fill opacity`（16% 預設）、focused／placement preview 倍率、Reload／Reset 與 storage fallback。最新 handoff 已比較 OSM、NLSC EMAP 與 NLSC PHOTO 的 16%／24% 顯示；結果支持目前預設，但不保證所有環境的普遍對比度。
 - Unreleased 已加入 Leaflet 公制比例尺、legend／status／Inspector 邊界配置與窄版 map overflow 修正。背景與驗證證據見 [`docs/MAP_CONTROLS_HANDOFF.md`](docs/MAP_CONTROLS_HANDOFF.md)，需求背景見 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
-- 最新 handoff 記錄 `node --test test_*.js` 82/82，並完成 Chromium 互動與多尺寸版面檢查；touch／stylus、screen reader、原生 OS picker 與實體裝置 Save 等人工 gate 仍未重新認證，因此本節仍不代表產品版本已發布。
+- 最新 handoff 記錄 `node --test test_*.js` 95/95，並完成真實瀏覽器 heading drag、criteria toggle、keyboard／Undo／Redo 與多尺寸版面檢查；touch／stylus、screen reader、原生 OS picker 與實體裝置 Save 等人工 gate 仍未重新認證，因此本節仍不代表產品版本已發布。
 
 ## Repository cleanup — 2026-08-30
 

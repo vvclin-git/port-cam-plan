@@ -12,7 +12,7 @@ Leaflet 港區 camera site-planning prototype。工具依 sensor、解析度、�
    python -m http.server 8765 --bind 127.0.0.1
    ```
 
-2. 用 `Add Camera`／`Place Camera` 放置 Camera：第一階段點選位置，第二階段移動游標預覽 Heading，再以第二次有效點擊建立一台 Camera。Navigate 模式可拖曳 focused、visible、unlocked 的 Camera 或 Target marker；拖曳結束只提交一次。
+2. 用 `Add Camera`／`Place Camera` 放置 Camera：第一階段點選位置，第二階段移動游標預覽 Heading，再以第二次有效點擊建立一台 Camera。Navigate 模式下，focused、visible、unlocked 的 Camera 會在 FOV 中心線附近顯示「拖曳調整方向」把手；拖曳只在 release 時提交一次，Escape／pointer cancel 會取消。Camera 或 Target marker 仍可直接拖曳，且拖曳結束只提交一次。
 3. 用兩階段 Target 放置流程先選位置，再指定船首方向。Target 可使用 `small-vessel` 或 `large-vessel` SVG 船型；Zoom 15 以上會以實際 Length × Width 投影地理尺寸。
 4. 從 Object Manager 管理 Cameras／Targets 的選取、搜尋、Visible、Enabled、Locked、Rename、Duplicate、Delete 與 Fit。Camera、Target、Active Camera、Current Target 和視覺上的 `focusedEntity` 是獨立狀態。
 5. 在 Inspector 編輯位置、方向、光學或 Target 尺寸。欄位採 preview／blur／Enter 的單次提交；Heading 可用 N/E/S/W compass scrubber 微調。`Focus map` 可暫時把地圖配置為全寬。
@@ -30,14 +30,14 @@ Top Bar 的 Project menu 支援 New Project、Open Project、Save Project As 與
 | --- | --- |
 | Project 持久資料 | Project name、Camera／Target、Camera／Target 設定、Map settings、Coverage Audit requirements，以及可選的 map viewport。Schema 是 `camera-project/1.0`。 |
 | Browser-local | Camera／Target Defaults、命名 Preset Library 與本機偏好；不嵌入 Project 或 Scene。 |
-| UI-only／runtime | panel、tab、search、Focus map、placement preview、legend 位置、preview draft、Observation cache、Comparison／Audit runtime 結果、Undo／Redo history 與 dirty state。 |
+| UI-only／runtime | panel、tab、search、Focus map、placement preview、legend 位置、Pixel coverage criteria profile、FOV heading handle preview、Observation cache、Comparison／Audit runtime 結果、Undo／Redo history 與 dirty state。 |
 
 Camera Scene 匯出是單一 Camera 的分析交接檔，包含當下 Camera、光學、FOV、底圖來源與保守 tile manifest；它不是完整 Project，也不保存 Camera／Target 集合。Project 檔用於恢復規劃工作；Scene 檔用於外部分析或下游流程。
 
 ## 計算、Surface 與授權限制
 
 - `HFOV = 2 × atan(sensor width / (2 × focal length))`；VFOV、pixel pitch、地平線與海平面 near／far footprint 依同一 `spherical-v1` 工程模型計算。
-- Pixel coverage 的 32／16／8 px 色帶是 site-planning heuristic，不是 YOLO 偵測率保證；實際效果仍受壓縮、光線、海況、遮擋、姿態與模型訓練資料影響。
+- Pixel coverage 可在地圖 legend 切換 `Pixel heuristic (8/16/32 px)` 與 `Johnson DRI (approx.)`；前者的 32／16／8 px 色帶與後者的 2 px／cycle 近似門檻都是 site-planning heuristic，不是 YOLO 偵測率或 Johnson 性能保證。Coverage Audit 仍使用其設定的 heuristic requirements；實際效果仍受壓縮、光線、海況、遮擋、姿態與模型訓練資料影響。
 - Surface 使用固定的 [`data/kaohsiung-harbor-surface.geojson`](./data/kaohsiung-harbor-surface.geojson)，支援 water／land／unknown、Polygon／MultiPolygon 與 holes。資料範圍為 `120.24–120.36 E / 22.55–22.68 N`，來源與處理限制見 [`docs/SURFACE_LAYER_IMPLEMENTATION.md`](./docs/SURFACE_LAYER_IMPLEMENTATION.md)。資料是規劃參考，不是測量級岸線；OpenStreetMap 資料採 `© OpenStreetMap contributors / ODbL 1.0`。
 - 目前保留近距離／遠距離、地平線與 30 km 最大射線距離限制；不包含 DEM、潮位、建築物、障礙物或精確 ray-casting 視角真值。
 - 舊 Python ray-casting 工具與其快取、CLI、Pillow 依賴已移除。Python HTTP server 在本專案只負責以 localhost 提供相對路徑的靜態檔案，不是 Python 計算服務。
@@ -52,11 +52,11 @@ OSM／NLSC 圖磚仍需外部網路；圖磚不隨專案快取或內嵌。Leafle
 
 ## 開發中（Unreleased）
 
-以下內容已實作並保留在 Unreleased；最新的 [`docs/MAP_CONTROLS_HANDOFF.md`](./docs/MAP_CONTROLS_HANDOFF.md) 記錄了 82/82 Node 測試、Chromium 互動與三種底圖的視覺檢查。這些證據仍不等同於產品發布：touch／stylus、screen reader、原生 OS picker 與實體裝置 Save 等人工 gate 尚未重新認證。需求背景為 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
+以下內容已實作並保留在 Unreleased；最新的 [`docs/MAP_CONTROLS_HANDOFF.md`](./docs/MAP_CONTROLS_HANDOFF.md) 記錄了 95/95 Node 測試與真實瀏覽器互動驗收。這些證據仍不等同於產品發布：touch／stylus、screen reader、原生 OS picker 與實體裝置 Save 等人工 gate 尚未重新認證。需求背景為 [issue #3](https://github.com/vvclin-git/port-cam-plan/issues/3)。
 
 - Map-only Pixel coverage `Reference size` 已與 planning height 分離，支援 preview、Enter／blur 單次提交、Escape／invalid rollback、Undo／Redo 與 Project replacement cancellation；相容性仍是 `camera-project/1.0`，新版可讀舊檔，但舊版嚴格欄位白名單可能拒絕新欄位。
 - Camera colors 的 browser-local `Fill opacity` 預設為 16%，另有 focused 與 placement-preview 倍率、Reload／Reset 和 storage fallback；handoff 已比較 OSM、NLSC EMAP 與 NLSC PHOTO 的 16%／24% 顯示，支持目前預設，但不保證所有環境的普遍對比度。
-- Leaflet 公制比例尺、legend／status／Inspector 的邊界配置與窄版 map overflow 修正已加入；FOV bearing handle、精確線／路徑量距、per-Camera settings 與 Map Settings redesign 仍在後續範圍。
+- Leaflet 公制比例尺、legend／status／Inspector 的邊界配置與窄版 map overflow 修正已加入；Navigate 模式的 Camera-only FOV heading handle、共享 heading gesture core，以及 session-local 的 Johnson DRI criteria legend 已加入。Target handle UI、精確線／路徑量距、per-Camera settings 與 Map Settings redesign 仍在後續範圍。
 
 ## 歷史階段摘要
 
@@ -91,4 +91,4 @@ node --check portcam-ui.js
 
 測試與自動化 browser smoke 不取代實體 touch／stylus、screen reader、native picker、實際下載權限、不同瀏覽器與部署環境的人工驗收；本次文件同步也不宣稱補完這些 gate。
 
-最新 MAP controls handoff 記錄的回歸結果為 `node --test test_*.js` 82/82，並包含實際 Chromium 互動與 1600／1280／900／480 px 版面檢查；這些結果屬 handoff evidence，不取代上述人工 gate。
+最新 MAP controls handoff 記錄的回歸結果為 `node --test test_*.js` 95/95，並包含真實瀏覽器 Camera heading drag、criteria toggle、keyboard、Undo／Redo 與 1600／1280／900／480 px 版面檢查；這些結果屬 handoff evidence，不取代上述人工 gate。

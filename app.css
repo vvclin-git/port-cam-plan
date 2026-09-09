@@ -123,11 +123,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .map-legend-title { flex: 0 0 auto; width: 100%; margin: 0; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 7px 7px 0 0; background: rgba(247,249,251,.96); color: var(--text); text-align: left; font-size: 11px; font-weight: 800; cursor: grab; user-select: none; touch-action: none; }
 .map-legend.is-dragging .map-legend-title { cursor: grabbing; }
 .map-legend-content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 9px 11px; user-select: text; touch-action: pan-y; }
+.criteria-row { display: flex; align-items: center; gap: 5px; margin-bottom: 7px; font-size: 11px; font-weight: 700; }
+.criteria-row select { min-width: 0; flex: 1 1 auto; padding: 3px 4px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--text); font: inherit; font-weight: 600; }
 .legend-item { display: flex; align-items: center; gap: 7px; margin: 3px 0; }
 .legend-swatch { width: 15px; height: 9px; border-radius: 3px; }
 .map-legend-reset { width: 100%; min-height: 27px; margin-top: 8px; padding: 4px 8px; font-size: 10px; }
 .camera-placement-preview-wrapper { background: transparent !important; border: 0 !important; }
 .camera-placement-preview-marker { display: block; width: 20px; height: 20px; border: 2px dashed #566273; border-radius: 50%; background: rgba(255,255,255,.38); box-shadow: 0 0 0 3px rgba(255,255,255,.55), 0 2px 7px rgba(20,34,52,.22); }
+.fov-heading-handle { display: grid; place-items: center; width: 40px; height: 40px; margin: 0; padding: 0; border: 2px solid var(--camera-color, #2563eb); border-radius: 50%; background: rgba(255,255,255,.96); box-shadow: 0 1px 4px rgba(20,34,52,.35), 0 0 0 2px rgba(255,255,255,.7); color: var(--camera-color, #2563eb); cursor: grab; touch-action: none; user-select: none; transform: translate(-50%, -50%); }
+.fov-heading-handle::before { content: ''; display: block; width: 0; height: 0; border-right: 6px solid transparent; border-bottom: 14px solid var(--camera-color, #2563eb); border-left: 6px solid transparent; transform: rotate(var(--heading-deg, 0deg)); transform-origin: 50% 58%; }
+.fov-heading-handle.is-dragging::after { content: attr(data-heading); position: absolute; top: 43px; left: 50%; transform: translateX(-50%); padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: 5px; background: rgba(255,255,255,.97); color: var(--ink); font-size: 11px; font-weight: 700; line-height: 1.2; white-space: nowrap; pointer-events: none; box-shadow: 0 1px 4px rgba(20,34,52,.25); }
+.fov-heading-handle.is-dragging { cursor: grabbing; box-shadow: 0 0 0 3px rgba(37,99,235,.2), 0 2px 6px rgba(20,34,52,.4); }
+.fov-heading-handle:focus-visible { outline: 3px solid rgba(37,99,235,.38); outline-offset: 2px; }
+.fov-heading-handle[aria-disabled="true"] { cursor: not-allowed; }
 
 .bottom-workspace { min-height: 48px; overflow: hidden; background: var(--panel); border-top: 1px solid var(--line); }
 .bottom-workspace.is-open { height: 300px; }

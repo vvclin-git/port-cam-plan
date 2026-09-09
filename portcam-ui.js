@@ -3,6 +3,7 @@
   const api = factory(
     root.PortCamCore || (typeof require === 'function' ? require('./portcam-core.js') : null),
     root.PortCamMap || (typeof require === 'function' ? require('./portcam-map.js') : null),
+    root.PortCamCriteria || (typeof require === 'function' ? require('./portcam-criteria.js') : null),
     root.PortCamComparison || (typeof require === 'function' ? require('./portcam-comparison.js') : null),
     root.PortCamYoloCoverage || (typeof require === 'function' ? require('./portcam-yolo-coverage.js') : null),
     root.PortCamCameraDefaults || (typeof require === 'function' ? require('./portcam-camera-defaults.js') : null),
@@ -17,9 +18,10 @@
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.PortCamUI = api;
-}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer, Project, TargetDefaults, TargetPresets, TargetCatalog, TargetPresetTransfer, CoverageAudit) {
+}(typeof globalThis !== 'undefined' ? globalThis : this, function (Core, MapApi, Criteria, Comparison, YoloCoverage, CameraDefaults, CameraPresets, CameraPresetTransfer, Project, TargetDefaults, TargetPresets, TargetCatalog, TargetPresetTransfer, CoverageAudit) {
   'use strict';
   if (!Core) throw new Error('PortCamUI requires PortCamCore');
+  if (!Criteria) throw new Error('PortCamUI requires PortCamCriteria');
   if (!Comparison) throw new Error('PortCamUI requires PortCamComparison');
   if (!YoloCoverage) throw new Error('PortCamUI requires PortCamYoloCoverage');
   if (!CameraDefaults) throw new Error('PortCamUI requires PortCamCameraDefaults');
@@ -119,6 +121,7 @@
     let referenceDraft = null;
     const opacityStorageKey = 'portcam.cameraFillOpacity';
     let cameraFillOpacity = MapApi.DEFAULT_FILL_OPACITY;
+    let coverageCriteriaProfileId = Criteria.DEFAULT_PROFILE_ID;
     try {
       const raw = view.localStorage.getItem(opacityStorageKey);
       const value = raw === null ? null : JSON.parse(raw);
@@ -128,7 +131,7 @@
       return `${state.projectEpoch}:${state.projectId}:${state.history.index}:${JSON.stringify(state.settings)}`;
     }
     function mapPresentation(state) {
-      return {...state, settings: {...state.settings, ...(referenceDraft?.valid ? {pixelCoverageReferenceSizeM: referenceDraft.value} : {})}, uiState: {...state.uiState, cameraFillOpacity}};
+      return {...state, settings: {...state.settings, ...(referenceDraft?.valid ? {pixelCoverageReferenceSizeM: referenceDraft.value} : {})}, uiState: {...state.uiState, cameraFillOpacity, coverageCriteriaProfileId}};
     }
     function finishReferenceEdit(commit) {
       if (!referenceDraft) return;
@@ -147,7 +150,7 @@
       const state = store.getState();
       const text = event.target.value.trim();
       const value = Number(text);
-      referenceDraft = {context: referenceContext(state), value, valid: text !== '' && Number.isFinite(value) && value > 0};
+      referenceDraft = {context: referenceContext(state), value, inputValue: event.target.value, valid: text !== '' && Number.isFinite(value) && value > 0};
       event.target.setAttribute('aria-invalid', String(!referenceDraft.valid));
       $('referenceSizeError').textContent = referenceDraft.valid ? '' : 'Enter a finite size greater than 0 m.';
       mapController.sync(mapPresentation(state));
@@ -158,6 +161,13 @@
       try { view.localStorage.setItem(opacityStorageKey, JSON.stringify(value)); } catch (_) { /* Keep the session preference if storage fails. */ }
       renderMapFovControl(store.getState());
       mapController.sync(mapPresentation(store.getState()));
+    }
+    function setCoverageCriteria(profileId) {
+      if (!Criteria.getCriteriaProfile(profileId)) return;
+      coverageCriteriaProfileId = profileId;
+      renderMapLegend(store.getState());
+      mapController.sync(mapPresentation(store.getState()));
+      scheduleLegendClamp();
     }
     let legendMarkupKey = null;
     let legendClampFrame = null;
@@ -1294,16 +1304,24 @@
         return;
       }
       els.mapLegend.hidden = false;
+      const profile = Criteria.getCriteriaProfile(coverageCriteriaProfileId) || Criteria.getCriteriaProfile();
+      const colors = MapApi.COVERAGE_COLORS || YoloCoverage.COVERAGE_COLORS;
       const referenceSize = comparisonNumber(state.settings.pixelCoverageReferenceSizeM);
-      const markupKey = 'coverage';
+      const draftActive = referenceDraft?.context === referenceContext(state);
+      const effectiveReferenceSize = draftActive && referenceDraft.valid ? referenceDraft.value : referenceSize;
+      const markupKey = `coverage:${profile.profileId}`;
       if (legendMarkupKey !== markupKey) {
-        els.mapLegend.innerHTML = `<button class="map-legend-title" type="button" data-legend-handle aria-label="Drag Pixel coverage legend" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">Pixel coverage</button><div class="map-legend-content"><label class="reference-size-row" for="pixelCoverageReferenceSizeM">Reference size <input id="pixelCoverageReferenceSizeM" type="number" step="any" min="0" inputmode="decimal" aria-describedby="referenceSizeHelp referenceSizeError" /> m</label><div id="referenceSizeError" class="error-text" role="status"></div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.robust}"></span>≥ 32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.usable}"></span>16–&lt;32 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.difficult}"></span>8–&lt;16 px</div><div class="legend-item"><span class="legend-swatch" style="background:${YoloCoverage.COVERAGE_COLORS.notRecommended}"></span>&lt; 8 px</div><div class="tiny map-legend-help">Pixel thresholds are site-planning heuristics, not guaranteed YOLO detection performance.</div><div id="referenceSizeHelp" class="tiny map-legend-help">Map reference size only; actual Target dimensions drive Observation and Coverage Audit.</div><button class="action-button map-legend-reset" type="button" data-legend-reset>重設位置</button></div>`;
+        const levels = profile.levels.map(level => `<div class="legend-item"><span class="legend-swatch" style="background:${escapeHtml(colors[level.levelId] || '#566273')}"></span>${escapeHtml(level.thresholdLabel)} · ${escapeHtml(level.label)}</div>`).join('');
+        els.mapLegend.innerHTML = `<button class="map-legend-title" type="button" data-legend-handle aria-label="Drag Pixel coverage legend" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">Pixel coverage · ${escapeHtml(profile.label)}</button><div class="map-legend-content"><label class="criteria-row" for="coverageCriteria">Criteria <select id="coverageCriteria" aria-label="Pixel coverage criteria"><option value="pixel-heuristic-v1">Pixel heuristic (8/16/32 px)</option><option value="johnson-dri-2px-v1">Johnson DRI (approx.)</option></select></label><label class="reference-size-row" for="pixelCoverageReferenceSizeM">Reference size <input id="pixelCoverageReferenceSizeM" type="number" step="any" min="0" inputmode="decimal" aria-describedby="referenceSizeHelp referenceSizeError" /> m</label><div id="referenceSizeError" class="error-text" role="status"></div>${levels}<div class="tiny map-legend-help">${escapeHtml(profile.assumption)}</div><div id="referenceSizeHelp" class="tiny map-legend-help">${escapeHtml(profile.referenceDescription)} Coverage Audit continues to use its configured heuristic requirements.</div><button class="action-button map-legend-reset" type="button" data-legend-reset>重設位置</button></div>`;
         legendMarkupKey = markupKey;
       }
-      if (!referenceDraft && $('pixelCoverageReferenceSizeM')) {
-        $('pixelCoverageReferenceSizeM').value = String(referenceSize);
-        $('pixelCoverageReferenceSizeM').setAttribute('aria-invalid', 'false');
+      els.mapLegend.setAttribute('aria-label', `Pixel coverage legend · ${profile.label}`);
+      if ($('coverageCriteria')) $('coverageCriteria').value = profile.profileId;
+      if ($('pixelCoverageReferenceSizeM')) {
+        $('pixelCoverageReferenceSizeM').value = draftActive && !referenceDraft.valid ? referenceDraft.inputValue : effectiveReferenceSize == null ? '' : String(effectiveReferenceSize);
+        $('pixelCoverageReferenceSizeM').setAttribute('aria-invalid', draftActive && !referenceDraft.valid ? 'true' : 'false');
       }
+      if ($('referenceSizeError')) $('referenceSizeError').textContent = draftActive && !referenceDraft.valid ? 'Enter a finite size greater than 0 m.' : '';
       clampLegendPosition();
     }
     function renderContextInspector(state) {
@@ -1749,7 +1767,7 @@
       const state = store.getState(); if (state.uiState.interactionMode !== 'navigate') { event.preventDefault(); cancelPlacementInteraction(); return; } if (state.uiState.panelOpen.mapSettings) return setPanel('mapSettings', false); if (state.uiState.focusMapMode) { event.preventDefault(); store.setFocusMapMode(false); return; } if (state.uiState.focusedEntity) { event.preventDefault(); store.clearFocusedEntity(); closeInspector(); return; } const narrow = Number(view.innerWidth || 1920) < 1366 || Number(view.devicePixelRatio || 1) >= 2; if (narrow && state.uiState.panelOpen.inspector) closeInspector();
     }
     function onInput(event) { const element = event.target; if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.id === 'objectManagerSearch') { const kind=store.getState().uiState.objectManagerTab === 'targets'?'target':'camera'; (kind==='camera'?store.setCameraSearchQuery:store.setTargetSearchQuery)(element.value); return; } if (element.id === 'targetSearch') { store.setTargetSearchQuery(element.value); return; } if (element.dataset.cameraField) previewCameraField(element.dataset.cameraField); if (element.dataset.targetField) previewTargetField(element.dataset.targetField); }
-    function onChange(event) { const element = event.target; if (element.id === 'projectSensorFormat') return applyProjectSensorPreset(); if (element.id === 'projectResolutionPreset') return applyProjectResolutionPreset(); if (element.id === 'projectPresetSelect') { projectSettingsPresetId = element.value; syncProjectPresetLibrary(); return; } if (element.id === 'projectPresetImportMerge' || element.id === 'projectPresetImportReplace') { projectImportMode = element.value; return replanProjectImport(); } if (element.id === 'projectPresetImportDefaults') { projectImportApplyDefaults = element.checked; return replanProjectImport(); } if (element.id === 'cameraPresetSelect') { inspectorPresetSelectionId = element.value; if (els.cameraPresetApply) els.cameraPresetApply.disabled = !selectedCamera() || selectedCamera()?.locked === true; return; } if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
+    function onChange(event) { const element = event.target; if (element.id === 'coverageCriteria') return setCoverageCriteria(element.value); if (element.id === 'projectSensorFormat') return applyProjectSensorPreset(); if (element.id === 'projectResolutionPreset') return applyProjectResolutionPreset(); if (element.id === 'projectPresetSelect') { projectSettingsPresetId = element.value; syncProjectPresetLibrary(); return; } if (element.id === 'projectPresetImportMerge' || element.id === 'projectPresetImportReplace') { projectImportMode = element.value; return replanProjectImport(); } if (element.id === 'projectPresetImportDefaults') { projectImportApplyDefaults = element.checked; return replanProjectImport(); } if (element.id === 'cameraPresetSelect') { inspectorPresetSelectionId = element.value; if (els.cameraPresetApply) els.cameraPresetApply.disabled = !selectedCamera() || selectedCamera()?.locked === true; return; } if (Object.prototype.hasOwnProperty.call(projectSettingsFieldMap, element.id)) { updateProjectSettingsDraftFromForm(); return; } if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); if (element.id === 'sensorFormat') applySensorPreset(); if (element.id === 'resolutionPreset') applyResolutionPreset(); if (element.id === 'orientation') store.patchSettings({coverageTargetDimension: element.value}, 'coverage-dimension'); if (element.id === 'baseMapSelect') store.patchSettings({baseMapKey: element.value}, 'base-map'); if (element.id === 'surfaceToggle') store.patchSettings({surfaceVisible: element.checked}, 'surface-visibility'); if (element.id === 'tileZoomSelect') store.patchSettings({tileZoom: Number(element.value)}, 'tile-zoom'); if (element.id === 'cameraLabelsToggle') { labelVisibility.camera = element.checked; mapController.setLabelVisibility?.({camera: element.checked}); } if (element.id === 'targetLabelsToggle') { labelVisibility.target = element.checked; mapController.setLabelVisibility?.({target: element.checked}); } }
     function onBlur(event) { const element = event.target; if (element.dataset.cameraField) commitCameraField(element.dataset.cameraField); if (element.dataset.targetField) commitTargetField(element.dataset.targetField); }
     function onEnter(event) { if (event.key === 'Enter') { const element = event.target; if (element.dataset.cameraField) { event.preventDefault(); commitCameraField(element.dataset.cameraField); } if (element.dataset.targetField) { event.preventDefault(); commitTargetField(element.dataset.targetField); } } }
     function onFormClick(event) { if (event.target.id === 'createTarget') createTargetFromForm(); if (event.target.closest?.('#cameraPresetApply')) applyInspectorPreset(); if (event.target.closest?.('#targetPresetApply')) applyTargetInspectorPreset(false); if (event.target.closest?.('#targetPresetReset')) applyTargetInspectorPreset(true); }
